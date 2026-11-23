@@ -43,6 +43,30 @@ services:
       timeout: 5s
       retries: 5
 
+  # 2-1. PostgreSQL (pgvector, pg_trgm 확장 지원)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ai_health}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres1234}
+      TZ: 'Asia/Seoul'
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - ws
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_health}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
   # 3. API Server (FastAPI)
   fastapi:
     container_name: fastapi
@@ -107,6 +131,7 @@ services:
 
 volumes:
   mysql_data:
+  postgres_data:
   static_volume:
 
 networks:

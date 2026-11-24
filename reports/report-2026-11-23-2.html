@@ -1,0 +1,380 @@
+<title>운전해도 되약 작업 보고서 2026-11-23</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: KRDS 표준 파랑(팀 색) · 흰 바탕 · 900px 단일 컬럼 · 요약 → 흐름 → 개발 단계 → 기능 맵 → 데이터 → 안전 → 평가 → 확정 필요 → 점검 이슈 */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-gov.min.css");
+:root{
+  --bg:#ffffff; --surface:#ffffff; --sunk:#f4f6fa; --line:#dde2ea; --fg:#1e2124; --muted:#58616a;
+  --accent:#256ef4; --accent-hover:#0b50d0; --accent-soft:#ecf2fe; --accent-fg:#ffffff;
+  --p0:#256ef4; --p1:#7aa4f8; --p2:#c3d4f8; --pn:#b1b8be;
+  --ok:#228738; --ok-soft:#eaf6ec; --warn:#8a5a00; --warn-soft:#fff3db; --bad:#d63d4a; --bad-soft:#fdefef; --info-soft:#f4f6fa;
+  --font:"Pretendard GOV","Pretendard",-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:17px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{text-wrap:balance;line-height:1.35;margin:0}
+h1{font-size:32px;letter-spacing:-.01em}
+h2{font-size:24px;display:flex;align-items:baseline;gap:10px}
+h2 .n{font-family:var(--mono);font-size:14px;color:var(--accent);font-weight:600}
+h3{font-size:17px}
+p{margin:0}
+code{font-family:var(--mono);font-size:.84em;background:var(--sunk);padding:1px 5px;border-radius:4px;border:1px solid var(--line)}
+section{display:flex;flex-direction:column;gap:18px}
+.lead{max-width:66ch;color:var(--muted)}
+.note{font-size:14px;color:var(--muted)}
+.eyebrow{font-size:13px;letter-spacing:.06em;color:var(--accent);font-weight:700}
+.tnum{font-variant-numeric:tabular-nums}
+
+header{display:flex;flex-direction:column;gap:12px;border-bottom:2px solid var(--accent);padding-bottom:22px}
+.meta{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:14px;color:var(--muted)}
+.meta b{color:var(--fg);font-weight:600}
+.users{display:flex;flex-wrap:wrap;gap:6px}
+.users span{font-size:13px;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-hover);font-weight:600}
+
+.summary{display:grid;grid-template-columns:1.35fr 1fr;gap:28px;align-items:start}
+.summary ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px;font-size:16px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.kpi{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.kpi b{font-size:28px;font-variant-numeric:tabular-nums;line-height:1.15}
+.kpi small{color:var(--muted);font-size:13px}
+.kpi.hl b{color:var(--accent)}
+
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;counter-reset:s}
+.step{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.step::before{counter-increment:s;content:counter(s);font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+.step b{font-size:15px}
+.step small{font-size:13px;color:var(--muted)}
+.step.user{background:var(--accent-soft);border-color:#c3d4f8}
+
+.phases{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.phase{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0;border-top:4px solid var(--c)}
+.phase h3{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.phase h3 small{font-size:13px;color:var(--muted);font-weight:400}
+.phase ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px;font-size:14.5px}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.dist{display:flex;flex-direction:column;gap:7px}
+.drow{display:grid;grid-template-columns:minmax(0,14em) 1fr 2.4em;gap:10px;align-items:center;font-size:14px}
+.dbar{display:flex;height:16px;border-radius:3px;overflow:hidden;background:var(--sunk)}
+.dbar i{display:block}
+.drow .v{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.fbtn{all:unset;cursor:pointer;font-size:14px;padding:6px 14px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);min-height:20px}
+.fbtn[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.fbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.reqgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.cat{border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.cat-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.cat-h b{font-size:15.5px}
+.cat-h small{font-size:12.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-direction:column;gap:2px}
+.chip{display:grid;grid-template-columns:72px 1fr auto;gap:8px;align-items:baseline;font-size:13.5px;padding:4px 6px;border-radius:6px}
+.chip:nth-child(odd){background:var(--sunk)}
+.chip .id{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.chip .nm{min-width:0}
+.pr{font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;white-space:nowrap;font-family:var(--mono)}
+.pr.P0{background:var(--p0);color:#fff}.pr.P1{background:var(--accent-soft);color:var(--accent-hover);border:1px solid #c3d4f8}
+.pr.P2{background:var(--sunk);color:var(--muted);border:1px solid var(--line)}.pr.na{background:var(--warn-soft);color:var(--warn)}
+.dup{font-size:11px;font-weight:700;color:var(--bad);margin-left:4px}
+
+.ladder{display:flex;flex-direction:column;gap:8px}
+.dw{display:grid;grid-template-columns:72px 1fr minmax(0,13em);gap:12px;align-items:center;border:1px solid var(--line);border-left:5px solid var(--c);border-radius:0;padding:10px 14px;font-size:14.5px}
+.dw code{background:none;border:0;padding:0;color:var(--c);font-weight:700}
+.dw .show{font-weight:700;color:var(--c);text-align:right}
+
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:9px 12px;vertical-align:top;border-bottom:1px solid var(--line)}
+th{font-size:13px;color:var(--muted);font-weight:600;background:var(--sunk);white-space:nowrap}
+tbody tr:nth-child(even) td{background:var(--sunk)}
+tbody tr:last-child td{border-bottom:0}
+td.ids{font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.no{background:var(--bad-soft);color:var(--bad)}
+.pill.build{background:var(--warn-soft);color:var(--warn)}
+.pill.user{background:var(--accent-soft);color:var(--accent-hover)}
+.readiness{display:flex;height:28px;border-radius:6px;overflow:hidden;font-size:12.5px;font-weight:700}
+.readiness div{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.box{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.box ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:5px;font-size:14.5px}
+.box li small{color:var(--muted)}
+
+.todo{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:6px 18px}
+.todo li{display:flex;gap:10px;align-items:flex-start;font-size:15px}
+.todo input{margin-top:6px;accent-color:var(--accent);flex:none;width:18px;height:18px}
+.todo label{cursor:pointer}
+
+.issues{display:flex;flex-direction:column;gap:8px}
+.issue{display:grid;grid-template-columns:auto 1fr;gap:12px;border:1px solid var(--line);border-left:4px solid var(--sev);border-radius:0;padding:11px 14px;font-size:14.5px}
+.issue .sv{font-size:12px;font-weight:700;color:var(--sev);white-space:nowrap;padding-top:2px}
+.issue.hi{--sev:var(--bad)}.issue.md{--sev:var(--warn)}.issue.lo{--sev:var(--muted)}
+
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:16px}
+
+@media (max-width:720px){
+  .summary,.two,.reqgrid,.phases,.todo{grid-template-columns:1fr}
+  .flow{grid-template-columns:1fr 1fr}
+  h1{font-size:26px}
+  .drow{grid-template-columns:minmax(0,9em) 1fr 2em}
+  .dw{grid-template-columns:60px 1fr}.dw .show{grid-column:2;text-align:left}
+}
+@media (max-width:420px){.flow{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <span class="eyebrow">팀 프로젝트 · 요구사항 정의서 시각화</span>
+  <h1>운전해도 되약?</h1>
+  <p class="lead">의료 기록 기반 개인 맞춤형 AI 복약 안내 및 건강 가이드 자동 생성 웹 서비스</p>
+  <div class="meta">
+    <span>문서 작성일 <b class="tnum">2026.11.17</b></span>
+    <span>보고서 작성 <b class="tnum">2026-11-23</b></span>
+    <span>문서 표기 상태 <b>팀 검토 전</b></span>
+    <span>자료 <b>요구사항정의서 최종 (PDF 12쪽)</b></span>
+  </div>
+  <div class="users"><span>택시기사</span><span>택배기사</span><span>버스기사</span><span>화물차 운전자</span><span>일반 운전자</span><span>서비스 관리자</span></div>
+</header>
+
+<section>
+  <h2><span class="n">01</span>요약</h2>
+  <div class="summary">
+    <ul>
+      <li>직업 운전자가 처방전·약봉투를 찍으면 <b>운전 관련 주의사항</b>(졸음, 어지러움, 시야 이상)을 식약처 공식 자료 근거로 바로 보여주는 서비스입니다.</li>
+      <li>기능 요구사항 63건 중 <b>P0(MVP 필수) 33건</b>입니다. OCR, 주의문구 탐지, 근거 기반 가이드, 챗봇, 안전 제한이 핵심입니다.</li>
+      <li>운전 가능 여부를 <b>확정하지 않고</b>, 진단·처방 변경도 하지 않습니다. 정보가 없으면 “확인 불가”로 표시합니다.</li>
+      <li>데이터 11종 중 확보된 것은 <b>e약은요와 허가정보 2종</b>뿐입니다. OCR 정답 라벨과 평가 데이터는 아직 없습니다.</li>
+      <li>개발 담당자와 일정은 아직 정해지지 않았고, 팀 확정이 필요한 항목이 16개 남아 있습니다.</li>
+    </ul>
+    <div class="kpis">
+      <div class="kpi hl"><b>33 / 63</b><small>P0 / 기능 요구사항</small></div>
+      <div class="kpi"><b>15</b><small>비기능 요구사항 (P0 9)</small></div>
+      <div class="kpi"><b>2 / 11</b><small>확보된 데이터</small></div>
+      <div class="kpi"><b>16</b><small>팀 확정 필요 사항</small></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">02</span>핵심 서비스 흐름</h2>
+  <div class="flow">
+    <div class="step user"><b>이미지 업로드</b><small>처방전·약봉투 촬영</small></div>
+    <div class="step"><b>OCR 텍스트 추출</b><small>의약품 관련 글자</small></div>
+    <div class="step"><b>정보 구조화</b><small>약품명·함량·복용량·횟수</small></div>
+    <div class="step user"><b>결과 확인·수정</b><small>사용자가 직접 확인</small></div>
+    <div class="step"><b>식약처 정보 조회</b><small>허가정보·e약은요</small></div>
+    <div class="step"><b>운전 주의문구 탐지</b><small>원문 위치와 연결</small></div>
+    <div class="step"><b>맞춤 가이드 생성</b><small>LLM, 근거 기반</small></div>
+    <div class="step user"><b>가이드 확인·챗봇</b><small>추가 질문</small></div>
+  </div>
+  <p class="note">파란 칸은 사용자가 직접 하는 단계입니다. 후보가 여러 개이거나 함량이 다르면 사용자가 확인하기 전까지 분석을 확정하지 않습니다 (추가 FR-042, SAF-004).</p>
+</section>
+
+<section>
+  <h2><span class="n">03</span>개발 단계</h2>
+  <div class="phases">
+    <div class="phase" style="--c:var(--p0)">
+      <h3>1차 · 필수<small>14개</small></h3>
+      <ul>
+        <li>처방전·약봉투 업로드</li><li>OCR 인식·결과 확인</li><li>식약처 의약품 정보 연동</li><li>운전 관련 주의문구 탐지</li>
+        <li>LLM 복약·건강 가이드</li><li>근거 기반 실시간 챗봇</li><li>모바일 웹 UI</li><li>안전성·오류 처리</li>
+        <li>원문 복용법 기반 가이드</li><li>복용량·횟수·투여 방법 구조화</li><li>복용법 원문 보존</li><li>버튼식 챗봇 질문 선택</li>
+        <li>상담 질문 안전성 검증</li><li>운전 중 조작 안전성 안내</li>
+      </ul>
+    </div>
+    <div class="phase" style="--c:var(--p1)">
+      <h3>2차 · 개선<small>11개</small></h3>
+      <ul>
+        <li>여러 의약품 주의정보 통합 요약</li><li>자주 묻는 질문 버튼</li><li>이미지 품질 안내</li><li>의약품 데이터 갱신 관리</li>
+        <li>직업·근무시간 입력</li><li>의료진 상담 질문 자동 생성</li><li>카드뉴스형 상담 질문지</li><li>질문지 이미지·PDF 저장</li>
+        <li>음성 명령으로 버튼 선택</li><li>챗봇 응답 음성 출력</li><li>음성 인식 오류 처리</li>
+      </ul>
+    </div>
+    <div class="phase" style="--c:var(--p2)">
+      <h3>3차 · 선택<small>3개</small></h3>
+      <ul><li>TTS 음성 안내</li><li>복약 기록 저장</li><li>복약 알림</li></ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">04</span>기능 요구사항 맵</h2>
+  <div class="legend">
+    <span><i style="background:var(--p0)"></i>P0 MVP 필수</span><span><i style="background:var(--p1)"></i>P1 완성도 향상</span>
+    <span><i style="background:var(--p2)"></i>P2 추후 확장</span><span><i style="background:var(--pn)"></i>우선순위 없음</span>
+  </div>
+  <div class="dist" id="dist"></div>
+  <div class="filters" role="group" aria-label="우선순위 필터">
+    <button class="fbtn" id="f-all" data-f="all" aria-pressed="true">전체 63</button>
+    <button class="fbtn" id="f-p0" data-f="P0" aria-pressed="false">P0 33</button>
+    <button class="fbtn" id="f-p1" data-f="P1" aria-pressed="false">P1 20</button>
+    <button class="fbtn" id="f-p2" data-f="P2" aria-pressed="false">P2 3</button>
+    <button class="fbtn" id="f-na" data-f="na" aria-pressed="false">없음 7</button>
+  </div>
+  <div class="reqgrid" id="reqgrid"></div>
+</section>
+
+<section>
+  <h2><span class="n">05</span>운전 주의정보 분류 체계</h2>
+  <div class="ladder">
+    <div class="dw" style="--c:var(--bad)"><code>DW-01</code><span>운전 회피 관련 명시적 경고</span><span class="show">공식 문구에 따른 운전 회피 안내</span></div>
+    <div class="dw" style="--c:var(--warn)"><code>DW-02</code><span>졸음·진정 관련 주의</span><span class="show">졸음 주의</span></div>
+    <div class="dw" style="--c:var(--warn)"><code>DW-03</code><span>어지러움·시각·인지기능 관련 주의</span><span class="show">운전 관련 증상 주의</span></div>
+    <div class="dw" style="--c:var(--muted)"><code>DW-04</code><span>운전 관련 정보 미확인</span><span class="show">확인 필요</span></div>
+  </div>
+  <p class="note">분류 기준과 라벨 정의는 팀 확정 필요 사항에 남아 있습니다.</p>
+</section>
+
+<section>
+  <h2><span class="n">06</span>데이터 준비 상태</h2>
+  <div class="readiness" role="img" aria-label="확보 2, 미확보 3, 구축·가공 필요 5, 사용자 입력 1">
+    <div style="width:18.2%;background:var(--ok);color:#fff">확보 2</div>
+    <div style="width:27.3%;background:var(--bad);color:#fff">미확보 3</div>
+    <div style="width:45.4%;background:var(--warn-soft);color:var(--warn)">구축·가공 필요 5</div>
+    <div style="width:9.1%;background:var(--accent-soft);color:var(--accent-hover)">입력 1</div>
+  </div>
+  <div class="tbl"><table>
+    <thead><tr><th>ID</th><th>데이터</th><th>필수 항목</th><th>상태</th></tr></thead>
+    <tbody>
+      <tr><td class="ids">DR-001</td><td>e약은요</td><td>제품명, 복약 방법, 주의사항, 부작용</td><td><span class="pill ok">확보</span></td></tr>
+      <tr><td class="ids">DR-002</td><td>의약품 제품 허가정보</td><td>제품명, 성분, 함량, 허가사항</td><td><span class="pill ok">확보</span></td></tr>
+      <tr><td class="ids">DR-003</td><td>처방전 OCR 이미지</td><td>이미지, 추출 대상 정답 라벨</td><td><span class="pill no">미확보</span></td></tr>
+      <tr><td class="ids">DR-004</td><td>약봉투 OCR 이미지</td><td>이미지, 의약품 정보 정답 라벨</td><td><span class="pill no">미확보</span></td></tr>
+      <tr><td class="ids">DR-005</td><td>운전 관련 주의문구</td><td>원문, 출처, 분류 라벨</td><td><span class="pill build">구축 필요</span></td></tr>
+      <tr><td class="ids">DR-006</td><td>OCR·의약품 매칭 정답</td><td>정답 약품명, 제품 식별정보</td><td><span class="pill build">구축 필요</span></td></tr>
+      <tr><td class="ids">DR-007</td><td>챗봇 평가 데이터</td><td>질문, 근거, 기대 응답</td><td><span class="pill no">미확보</span></td></tr>
+      <tr><td class="ids">DR-008</td><td>복용법 구조화 데이터</td><td>1회 투여량, 1일 횟수, 투여 방법, 조건부 지시</td><td><span class="pill build">가공 필요</span></td></tr>
+      <tr><td class="ids">DR-009</td><td>사용자 생활정보</td><td>직업, 근무시간, 운전시간, 불편사항</td><td><span class="pill user">사용자 입력</span></td></tr>
+      <tr><td class="ids">DR-010</td><td>상담 질문 평가 데이터</td><td>상황, 처방 정보, 질문 정답 예시</td><td><span class="pill build">구축 필요</span></td></tr>
+      <tr><td class="ids">DR-011</td><td>음성 명령 데이터</td><td>번호 선택 명령, 문장, 인식 결과</td><td><span class="pill build">구축 필요</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2><span class="n">07</span>의료 안전성과 비기능 요구사항</h2>
+  <div class="two">
+    <div class="box">
+      <h3>의료 안전성 (SAF)</h3>
+      <ul>
+        <li>임의 복용 중단 권고 금지 <small>· 처방 변경 요구 응답 제한</small></li>
+        <li>운전 가능 여부 확정 금지 <small>· 주의정보와 의료진 확인 안내</small></li>
+        <li>근거 없는 안전 판정 금지 <small>· “확인 불가” 표시</small></li>
+        <li>OCR 오류로 잘못된 매칭 방지 <small>· 사용자 확인, 불확실 매칭 차단</small></li>
+        <li>공식 주의정보 왜곡 방지 <small>· 원문과 생성 안내 비교</small></li>
+        <li>운전 중 사용 위험 방지 <small>· 정차 후 이용 안내</small></li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>비기능 P0 (9건)</h3>
+      <ul>
+        <li>정확성 · 매칭 오류 최소화</li><li>신뢰성 · 공식 자료 근거</li><li>보안 · API 키·사용자 정보 비노출</li>
+        <li>개인정보 · 수집·보관·삭제 정책</li><li>예외 처리 · OCR·API·LLM 실패 안내</li><li>사용성 · 주의정보 바로 확인</li>
+        <li>정보 정확성 · 투여량·횟수·단위 보존</li><li>개인정보 보호 · 필요 범위만 처리</li><li>안전성 · 음성 기능이 운전 중 사용을 조장하지 않음</li>
+      </ul>
+      <p class="note">P1 6건: 성능 측정, 접근성, 모듈 분리, 데이터 최신성, 카드뉴스 편의성, 음성 인식 정확도.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">08</span>성능 평가 계획</h2>
+  <div class="tbl"><table>
+    <thead><tr><th>평가 대상</th><th>지표</th><th>방법</th></tr></thead>
+    <tbody>
+      <tr><td>OCR</td><td>CER, 약품명 정확 일치율</td><td>정답 라벨과 비교</td></tr>
+      <tr><td>의약품 매칭</td><td>Top-1 정확도, 미매칭률</td><td>정답 제품정보와 비교</td></tr>
+      <tr><td>주의문구 탐지</td><td>Precision, Recall, F1</td><td>전문가 검토 또는 검증된 정답</td></tr>
+      <tr><td>LLM 안내</td><td>근거 일치율, 핵심 정보 누락률</td><td>공식 원문과 비교</td></tr>
+      <tr><td>챗봇</td><td>근거 기반 정답률, 부적절 응답률</td><td>사전 정의 질문셋</td></tr>
+      <tr><td>사용자 편의성</td><td>확인 시간, 작업 완료율</td><td>기존 직접 검색 방식과 비교</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">최종 목표는 기능 작동 여부뿐 아니라 기존 검색 방식보다 확인 부담을 실제로 줄였는지 검증하는 것입니다. 목표 수치는 아직 정해지지 않았습니다.</p>
+</section>
+
+<section>
+  <h2><span class="n">09</span>팀 확정 필요 사항</h2>
+  <ul class="todo">
+    <li><input type="checkbox" id="q1"><label for="q1">회원가입·로그인 포함 여부</label></li>
+    <li><input type="checkbox" id="q2"><label for="q2">사용자별 복약 기록 저장 여부</label></li>
+    <li><input type="checkbox" id="q3"><label for="q3">처방전·약봉투 외 입력 문서 지원</label></li>
+    <li><input type="checkbox" id="q4"><label for="q4">OCR 모델·LLM 선정</label></li>
+    <li><input type="checkbox" id="q5"><label for="q5">운전 관련 문구 분석 범위</label></li>
+    <li><input type="checkbox" id="q6"><label for="q6">주의정보 분류 기준·라벨 정의</label></li>
+    <li><input type="checkbox" id="q7"><label for="q7">챗봇 응답 범위·사용 방식</label></li>
+    <li><input type="checkbox" id="q8"><label for="q8">실제 의료 문서 보관·삭제 정책</label></li>
+    <li><input type="checkbox" id="q9"><label for="q9">복용법 요약 범위·원문 표시 방식</label></li>
+    <li><input type="checkbox" id="q10"><label for="q10">생활정보 입력 항목·필수 여부</label></li>
+    <li><input type="checkbox" id="q11"><label for="q11">카드뉴스 질문지 구성·저장 형식</label></li>
+    <li><input type="checkbox" id="q12"><label for="q12">음성 인식 방식 (STT 모델 / 브라우저)</label></li>
+    <li><input type="checkbox" id="q13"><label for="q13">TTS 필수 구현 여부</label></li>
+    <li><input type="checkbox" id="q14"><label for="q14">음성 기능 주행 중 이용 제한 정책</label></li>
+    <li><input type="checkbox" id="q15"><label for="q15">상담 질문지 민감정보 처리</label></li>
+    <li><input type="checkbox" id="q16"><label for="q16">목표 성능·응답시간, 담당자·일정</label></li>
+  </ul>
+  <p class="note">체크 표시는 이 화면에서만 바뀌고 저장되지 않습니다.</p>
+</section>
+
+<section>
+  <h2><span class="n">10</span>문서 점검 이슈</h2>
+  <div class="issues">
+    <div class="issue hi"><span class="sv">ID 중복</span><span><b>FR-040~045가 두 번 쓰였습니다.</b> 3.7 복용법(FR-040~044)·상담 질문지(FR-045)와 8쪽 “요구사항 추가 후보지”(FR-040~045)가 같은 번호입니다. 추가 후보 6건을 FR-058~063으로 바꾸는 것을 제안합니다. 이 보고서에서는 “추가”로 구분했습니다.</span></div>
+    <div class="issue md"><span class="sv">번호</span><span><b>3.7 절 번호가 세 번 나옵니다.</b> 복용법 가이드, 상담 질문지, 추가 후보지 모두 3.7이고, 음성 조작은 3.8입니다.</span></div>
+    <div class="issue md"><span class="sv">누락</span><span><b>FR-001~007(업로드·OCR)에 우선순위가 없습니다.</b> 1차 개발 목록에는 업로드·OCR이 필수로, 이미지 품질 안내(FR-007)는 2차로 들어 있어 P0/P1 표기가 필요합니다.</span></div>
+    <div class="issue md"><span class="sv">불일치</span><span><b>음성 안내 기준이 섞여 있습니다.</b> FR-031 음성 안내는 P2, FR-054 음성 안내 출력은 P1, 개발 단계에서는 TTS가 3차입니다.</span></div>
+    <div class="issue md"><span class="sv">일정</span><span><b>담당자와 일정이 없습니다.</b> 확정 필요 사항으로만 남아 있어 이 보고서에는 일정 화면을 넣지 않았습니다.</span></div>
+    <div class="issue lo"><span class="sv">표기</span><span>파일명은 “최종”인데 본문은 “팀 검토 전”, 비고는 “최초 요구사항 정의 초안”입니다.</span></div>
+  </div>
+</section>
+
+<footer>운전해도 되약? 팀 요구사항 정의서(2026.11.17, PDF 12쪽)를 바탕으로 2026-11-23에 작성. 문서에 없는 내용은 추가하지 않았습니다.</footer>
+</div>
+
+<script>
+const SEC = [
+ ["3.1 의료 문서 업로드·OCR",[["FR-001","이미지 업로드"],["FR-002","OCR 문자 인식"],["FR-003","의약품 정보 추출"],["FR-004","인식 결과 확인"],["FR-005","의약품명 매칭"],["FR-006","다중 의약품 처리"],["FR-007","이미지 품질 확인"]].map(r=>[...r,"na"])],
+ ["3.2 의약품 조회·운전 주의 분석",[["FR-008","의약품 정보 조회","P0"],["FR-009","운전 관련 문구 탐지","P0"],["FR-010","주의정보 유형 분류","P0"],["FR-011","주의정보 요약","P0"],["FR-012","공식 원문 확인","P0"],["FR-013","조회 실패 처리","P0"],["FR-014","복수 의약품 통합","P1"]]],
+ ["3.3 LLM 맞춤 가이드",[["FR-015","복약 가이드 생성","P0"],["FR-016","운전 주의 가이드 생성","P0"],["FR-017","간단한 건강 가이드","P0"],["FR-018","쉬운 표현 변환","P0"],["FR-019","근거 기반 생성","P0"],["FR-020","가이드 재생성","P1"]]],
+ ["3.4 실시간 AI 챗봇",[["FR-021","챗봇 질문 입력","P0"],["FR-022","복약 정보 응답","P0"],["FR-023","운전 관련 질문 응답","P0"],["FR-024","질문 버튼 제공","P1"],["FR-025","답변 근거 표시","P0"],["FR-026","답변 범위 제한","P0"]]],
+ ["3.5 사용자 인터페이스",[["FR-027","메인 화면","P0"],["FR-028","의약품 목록","P0"],["FR-029","주의정보 표시","P0"],["FR-030","모바일 반응형 UI","P0"],["FR-031","음성 안내","P2"],["FR-032","복약 기록 저장","P2"]]],
+ ["3.6 의약품 비교 검색",[["FR-033","복용 횟수 검색 필터","P1"],["FR-034","동일 성분 검색","P1"],["FR-035","약효군별 비교","P2"],["FR-036","의약품 상세 비교","P1"],["FR-037","졸음 주의정보 비교","P1"],["FR-038","상담용 비교 결과","P1"],["FR-039","자동 대체 제한","P0"]]],
+ ["3.7 복용법 기반 생활 가이드",[["FR-040","복용법 정보 추출","P0"],["FR-041","복용법 기반 가이드 생성","P0"],["FR-042","복용법 정보 시각화","P0"],["FR-043","복용법 원문 보존","P0"],["FR-044","원문 확인 기능","P1"]]],
+ ["3.7 생활정보 기반 상담 질문지",[["FR-045","생활정보 입력","P1"],["FR-046","생활정보·복약 정보 연계","P1"],["FR-047","의료진 상담 질문 생성","P1"],["FR-048","카드뉴스형 질문지 생성","P1"],["FR-049","질문지 저장·공유","P1"],["FR-050","상담 질문 안전성 검증","P0"]]],
+ ["3.8 음성 기반 버튼식 챗봇",[["FR-051","버튼식 질문 선택","P0"],["FR-052","음성 명령 인식","P1"],["FR-053","음성 명령·버튼 연동","P1"],["FR-054","음성 안내 출력","P1"],["FR-055","음성 인식 오류 처리","P1"],["FR-056","음성 입력 활성화","P1"],["FR-057","주행 중 조작 안전성 안내","P0"]]],
+ ["3.7 요구사항 추가 후보지",[["FR-040","다중 이미지 입력","P1",1],["FR-041","정보 출처 구분","P0",1],["FR-042","불확실한 제품 처리","P0",1],["FR-043","의약품 직접 검색","P0",1],["FR-044","비교 후보 제한","P0",1],["FR-045","확인된 복용법 구분","P0",1]]]
+];
+const COL = {P0:"var(--p0)",P1:"var(--p1)",P2:"var(--p2)",na:"var(--pn)"};
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const max = Math.max(...SEC.map(s=>s[1].length));
+document.getElementById("dist").innerHTML = SEC.map(([name,rows])=>{
+  const seg = ["P0","P1","P2","na"].map(p=>{const n=rows.filter(r=>r[2]===p).length;return n?`<i style="width:${n/max*100}%;background:${COL[p]}" title="${p==="na"?"없음":p} ${n}건"></i>`:""}).join("");
+  return `<div class="drow"><span>${esc(name)}</span><span class="dbar">${seg}</span><span class="v">${rows.length}</span></div>`;
+}).join("");
+const grid = document.getElementById("reqgrid");
+function render(f){
+  grid.innerHTML = SEC.map(([name,rows])=>{
+    const shown = rows.filter(r=>f==="all"||r[2]===f);
+    if(!shown.length) return "";
+    const p0 = rows.filter(r=>r[2]==="P0").length;
+    return `<div class="cat"><div class="cat-h"><b>${esc(name)}</b><small>P0 ${p0} / ${rows.length}</small></div><div class="chips">${
+      shown.map(r=>`<div class="chip"><span class="id">${r[0]}${r[3]?`<span class="dup">추가</span>`:""}</span><span class="nm">${esc(r[1])}</span><span class="pr ${r[2]}">${r[2]==="na"?"없음":r[2]}</span></div>`).join("")
+    }</div></div>`;
+  }).join("");
+}
+document.querySelectorAll(".fbtn").forEach(b=>b.addEventListener("click",()=>{
+  document.querySelectorAll(".fbtn").forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));
+  render(b.dataset.f);
+}));
+render("all");
+</script>

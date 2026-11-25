@@ -1,7 +1,8 @@
 -- =============================================================================
 --  안심약국 (Ansim Pharmacy) — PostgreSQL 16 서비스 스키마
 --  파일: infra/db/schema.sql
---  기준 문서: 요구사항 정의서 겸 계획서(261123 최종, 신혜원) + 구현계획 엑셀(261123 최종)
+--  기준 문서: 요구사항 정의서 겸 계획서(261125, 신혜원) + 구현계획 엑셀(261125)
+--  261125 수정: 기획 검토 결정 반영 → 맨 아래 20장 (docs/review/decision_log_261125.md)
 --  대상: PostgreSQL 16 + pgvector(0.5 이상, 운영 0.8.x) + pg_trgm
 --
 --  [실행 전제]
@@ -1036,6 +1037,341 @@ INSERT INTO chat_preset_questions (preset_code, category, question_text, show_wh
   ('SIT-MISSED',   'SITUATION','약 먹는 걸 잊었어요',                                      '{}', 1020),
   ('SIT-PREG',     'SITUATION','임신·수유 중이에요',                                       '{}', 1030)
 ON CONFLICT (preset_code) DO NOTHING;
+
+
+-- =============================================================================
+-- 20. 261125 기획 검토 반영 (docs/review/decision_log_261125.md)
+--     앞 절의 같은 이름 함수는 여기서 다시 정의한 것이 최종본이다.
+-- =============================================================================
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- 삭제 기록 해시 HMAC (P-09)
+
+-- 20-1) 건별 동의·건별 철회 (D-02, D-19, S-01)
+--   scope: USER = 마이페이지·가입 등 사람 단위 / DOCUMENT = 업로드할 때 받은 그 문서 동의, 그 문서 철회
+ALTER TABLE consent_logs ADD COLUMN IF NOT EXISTS scope       TEXT NOT NULL DEFAULT 'USER';
+ALTER TABLE consent_logs ADD COLUMN IF NOT EXISTS document_id UUID;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_consent_scope') THEN
+    ALTER TABLE consent_logs ADD CONSTRAINT ck_consent_scope CHECK (scope IN ('USER','DOCUMENT'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_consent_document') THEN
+    -- D1은 앱이 만든 document_id로 동의 2행을 먼저 넣고 같은 트랜잭션에서 문서를 넣는다 → 지연 검사
+    ALTER TABLE consent_logs ADD CONSTRAINT fk_consent_document FOREIGN KEY (document_id)
+      REFERENCES documents (document_id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_consent_document ON consent_logs (document_id) WHERE document_id IS NOT NULL;
+
+-- 누적 전용 유지. 단 문서 삭제 때 FK가 document_id만 비우는 경우는 허용
+CREATE OR REPLACE FUNCTION fn_consent_logs_immutable() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.document_id IS NOT NULL AND NEW.document_id IS NULL
+     AND (to_jsonb(NEW) - 'document_id') = (to_jsonb(OLD) - 'document_id') THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'consent_logs 는 누적 전용입니다. 변경은 새 행(AGREE/WITHDRAW)으로 추가하세요. (USR-004)';
+END $$;
+
+-- 사람 단위 현재 동의 = 해당 종류에서 (사람 단위 행 + 모든 AGREE 행) 중 가장 최근이 AGREE
+--   문서 단위 철회(그 문서 지우기)는 다른 문서·사람 단위 상태에 영향을 주지 않는다
+CREATE OR REPLACE FUNCTION fn_has_active_consent(p_user_id BIGINT, p_type TEXT) RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+  SELECT coalesce((
+    SELECT c.action = 'AGREE'
+      FROM consent_logs c
+     WHERE c.user_id = p_user_id AND c.consent_type = p_type
+       AND (c.scope = 'USER' OR c.action = 'AGREE')
+     ORDER BY c.created_at DESC, c.consent_log_id DESC
+     LIMIT 1), false)
+$$;
+
+-- 업로드 트리거: 넘겨받은 동의 행 + 현재 유효한 문서 처리·건강 민감정보 동의를 함께 확인 (S-01, F-01)
+CREATE OR REPLACE FUNCTION fn_documents_check_consent() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE ok boolean;
+BEGIN
+  SELECT (c.user_id = NEW.user_id AND c.consent_type = 'DOCUMENT_PROCESSING' AND c.action = 'AGREE')
+    INTO ok FROM consent_logs c WHERE c.consent_log_id = NEW.consent_log_id;
+  IF NOT coalesce(ok, false)
+     OR NOT fn_has_active_consent(NEW.user_id, 'DOCUMENT_PROCESSING')
+     OR NOT fn_has_active_consent(NEW.user_id, 'HEALTH_SENSITIVE') THEN
+    RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'CONSENT_REQUIRED',
+      DETAIL = '문서 처리 동의와 건강 민감정보 동의가 모두 현재 유효해야 합니다.';
+  END IF;
+  RETURN NEW;
+END $$;
+
+-- 20-2) 처방 항목: 자동 확인 표시(W-01), AI 안내 받지 않기(D-14)
+ALTER TABLE document_items ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
+ALTER TABLE document_items ADD COLUMN IF NOT EXISTS ai_excluded  BOOLEAN NOT NULL DEFAULT false;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_items_confirmed_by') THEN
+    ALTER TABLE document_items ADD CONSTRAINT ck_items_confirmed_by
+      CHECK (confirmed_by IS NULL OR confirmed_by IN ('AUTO','USER'));
+  END IF;
+END $$;
+COMMENT ON COLUMN document_items.needs_review IS '확인이 필요한 약: 점수 0.7 미만 또는 미매칭 (화면 주황 카드)';
+COMMENT ON COLUMN document_items.confirmed_by IS 'AUTO = 보험코드 일치·점수 0.7 이상이라 서버가 미리 확인 표시, USER = 사용자가 확인 (W-01)';
+COMMENT ON COLUMN document_items.ai_excluded  IS 'true = AI 안내를 받지 않기로 한 약. LLM 입력에서만 빠지고 금기·주의 확인·허가 정보·시간표에는 포함 (D-14)';
+COMMENT ON COLUMN document_items.include_in_analysis IS 'false = 진료기록 PDF의 과거 약 중 고르지 않은 약(DOC-007). 금기·주의 확인에서도 빠짐';
+COMMENT ON COLUMN guides.cache_key IS 'sha256(분석 대상 약(ai_excluded 제외) + 그 문서 진단명 + 건강정보 + 자료 기준일) (MED-008, D-04)';
+
+-- 20-3) 금기·주의 결과: 처방 간 병용금기, 나이 판단 서버화 (D-05, D-07, F-03, S-02)
+ALTER TABLE dur_alerts ADD COLUMN IF NOT EXISTS period_check_needed BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE dur_alerts DROP CONSTRAINT IF EXISTS ck_dur_alert_reason;
+ALTER TABLE dur_alerts ADD CONSTRAINT ck_dur_alert_reason CHECK (trigger_reason IN (
+  'PAIR_IN_DOCUMENT',       -- 같은 처방 안 두 약
+  'PAIR_ACROSS_DOCUMENTS',  -- 복용 기간이 겹치는 다른 처방의 약 (D-05)
+  'PROFILE_PREGNANCY',      -- user_profiles.pregnancy_status
+  'AGE_MATCHED',            -- age_limit 원문을 해석해 해당
+  'AGE_CHECK_NEEDED',       -- 해석 불가 또는 기준 나이 ±1세 (출생연도 근사, P-02)
+  'ELDERLY_65',             -- 만 65세 이상
+  'AGE_CHECK','ITEM_RULE')); -- 이전 버전 호환용(새로 만들지 않음)
+
+-- 1차 계산 유형: CONCOMITANT(병용금기)·PREGNANCY·AGE·ELDERLY 4종만 (D-07).
+--   실제 dur_type 값은 infra/db/00_precheck.sql 의 유형별 건수로 확인 후 맞출 것.
+DROP FUNCTION IF EXISTS fn_dur_alerts_for_document(UUID);
+CREATE FUNCTION fn_dur_alerts_for_document(p_document_id UUID)
+RETURNS TABLE (dur_rule_id BIGINT, dur_type TEXT, item_id_a BIGINT, item_id_b BIGINT,
+               trigger_reason TEXT, matched_code_a TEXT, matched_code_b TEXT,
+               user_age SMALLINT, period_check_needed BOOLEAN)
+LANGUAGE sql STABLE AS $$
+  WITH doc AS (
+    SELECT d.document_id, d.user_id,
+           (extract(year FROM now())::int - u.birth_year)::smallint AS age,
+           coalesce(p.pregnancy_status, 'NONE') AS preg,
+           coalesce(d.visit_date, d.created_at::date) AS d_start,
+           coalesce(d.visit_date, d.created_at::date)
+             + coalesce((SELECT max(i.total_days) FROM document_items i
+                          WHERE i.document_id = d.document_id), 30) - 1 AS d_end
+      FROM documents d
+      JOIN users u ON u.user_id = d.user_id
+      LEFT JOIN user_profiles p ON p.user_id = d.user_id
+     WHERE d.document_id = p_document_id
+  ),
+  codes AS (   -- 분석 대상 약 → 성분코드 (주성분 + 그룹). ai_excluded 약도 포함 (D-14)
+    SELECT di.item_id, di.document_id, di.total_days, c.code
+      FROM document_items di
+      JOIN v_item_ingredients vi ON vi.item_seq = di.matched_item_seq
+      CROSS JOIN LATERAL (VALUES (vi.main_ingredient_code), (vi.ingredient_group_code)) AS c(code)
+     WHERE di.include_in_analysis
+       AND c.code IS NOT NULL
+  ),
+  it AS (SELECT DISTINCT item_id, code FROM codes WHERE document_id = p_document_id),
+  other AS (   -- 같은 사용자의 확인 완료된 다른 처방 중 복용 기간이 겹치는 약 (일수 없으면 30일로 보고 표시)
+    SELECT DISTINCT k.item_id, k.code, (k.total_days IS NULL) AS period_unknown
+      FROM codes k
+      JOIN documents o ON o.document_id = k.document_id
+      CROSS JOIN doc
+     WHERE o.user_id = doc.user_id
+       AND o.document_id <> doc.document_id
+       AND o.confirmed_at IS NOT NULL
+       AND coalesce(o.visit_date, o.created_at::date) <= doc.d_end
+       AND coalesce(o.visit_date, o.created_at::date) + coalesce(k.total_days, 30) - 1 >= doc.d_start
+  ),
+  pair_in AS ( -- 같은 처방 안 서로 다른 두 약 (규칙 방향 무관)
+    SELECT DISTINCT r.dur_rule_id, r.dur_type,
+           least(x.item_id, y.item_id) AS a, greatest(x.item_id, y.item_id) AS b,
+           'PAIR_IN_DOCUMENT'::text AS reason,
+           CASE WHEN x.item_id < y.item_id THEN x.code ELSE y.code END AS ca,
+           CASE WHEN x.item_id < y.item_id THEN y.code ELSE x.code END AS cb,
+           false AS pc
+      FROM dur_rules r
+      JOIN it x ON x.code = r.ingr_code_a
+      JOIN it y ON y.code = r.ingr_code_b AND y.item_id <> x.item_id
+     WHERE r.ingr_code_b IS NOT NULL AND r.dur_type = 'CONCOMITANT'
+  ),
+  pair_across AS ( -- 이 처방의 약 x + 다른 처방의 약 y (D-05)
+    SELECT DISTINCT r.dur_rule_id, r.dur_type, x.item_id AS a, y.item_id AS b,
+           'PAIR_ACROSS_DOCUMENTS'::text AS reason, x.code AS ca, y.code AS cb,
+           y.period_unknown AS pc
+      FROM dur_rules r
+      JOIN it x ON x.code IN (r.ingr_code_a, r.ingr_code_b)
+      JOIN other y ON y.code = CASE WHEN x.code = r.ingr_code_a THEN r.ingr_code_b ELSE r.ingr_code_a END
+     WHERE r.ingr_code_b IS NOT NULL AND r.dur_type = 'CONCOMITANT'
+  ),
+  age_rules AS (
+    SELECT r.dur_rule_id, r.dur_type, r.ingr_code_a,
+           regexp_match(coalesce(r.age_limit, ''), '([0-9]+)\s*세\s*(미만|이하|이상|초과)') AS m
+      FROM dur_rules r
+     WHERE r.dur_type = 'AGE' AND r.ingr_code_b IS NULL
+  ),
+  single AS (
+    SELECT DISTINCT r.dur_rule_id, r.dur_type, x.item_id AS a, NULL::bigint AS b,
+           CASE r.dur_type WHEN 'PREGNANCY' THEN 'PROFILE_PREGNANCY' ELSE 'ELDERLY_65' END AS reason,
+           x.code AS ca, NULL::text AS cb, false AS pc
+      FROM dur_rules r
+      JOIN it x ON x.code = r.ingr_code_a
+      CROSS JOIN doc
+     WHERE r.ingr_code_b IS NULL
+       AND (   (r.dur_type = 'PREGNANCY' AND doc.preg IN ('PREGNANT','POSSIBLE'))
+            OR (r.dur_type = 'ELDERLY'   AND doc.age >= 65))
+    UNION
+    SELECT DISTINCT ar.dur_rule_id, ar.dur_type, x.item_id, NULL::bigint,
+           CASE WHEN ar.m IS NULL OR abs(doc.age - ar.m[1]::int) <= 1
+                THEN 'AGE_CHECK_NEEDED' ELSE 'AGE_MATCHED' END,
+           x.code, NULL::text, false
+      FROM age_rules ar
+      JOIN it x ON x.code = ar.ingr_code_a
+      CROSS JOIN doc
+     WHERE ar.m IS NULL
+        OR abs(doc.age - ar.m[1]::int) <= 1
+        OR (ar.m[2] = '미만' AND doc.age <  ar.m[1]::int)
+        OR (ar.m[2] = '이하' AND doc.age <= ar.m[1]::int)
+        OR (ar.m[2] = '이상' AND doc.age >= ar.m[1]::int)
+        OR (ar.m[2] = '초과' AND doc.age >  ar.m[1]::int)
+  )
+  SELECT s.dur_rule_id, s.dur_type, s.a, s.b, s.reason, s.ca, s.cb, doc.age, s.pc
+    FROM (SELECT * FROM pair_in
+          UNION ALL SELECT * FROM pair_across
+          UNION ALL SELECT * FROM single) s
+   CROSS JOIN doc
+$$;
+
+-- 화면 3을 열 때마다 다시 계산 (D-05). 다른 처방을 지우면 FK CASCADE로 처방 간 결과도 사라짐
+CREATE OR REPLACE FUNCTION fn_refresh_dur_alerts(p_document_id UUID) RETURNS INTEGER
+LANGUAGE plpgsql AS $$
+DECLARE n INTEGER;
+BEGIN
+  DELETE FROM dur_alerts WHERE document_id = p_document_id;
+  INSERT INTO dur_alerts (document_id, item_id_a, item_id_b, dur_rule_id, dur_type,
+                          trigger_reason, matched_code_a, matched_code_b, user_age, period_check_needed)
+  SELECT p_document_id, f.item_id_a, f.item_id_b, f.dur_rule_id, f.dur_type,
+         f.trigger_reason, f.matched_code_a, f.matched_code_b, f.user_age, f.period_check_needed
+    FROM fn_dur_alerts_for_document(p_document_id) f
+  ON CONFLICT DO NOTHING;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  RETURN n;
+END $$;
+
+-- 20-4) 복약 시간표: 시간 표시 없는 하루 1번 약 (D-01, S-03)
+ALTER TABLE medication_schedules ADD COLUMN IF NOT EXISTS slot_source TEXT NOT NULL DEFAULT 'PRESCRIPTION';
+ALTER TABLE medication_schedules DROP CONSTRAINT IF EXISTS ck_schedule_slot;
+ALTER TABLE medication_schedules ADD CONSTRAINT ck_schedule_slot
+  CHECK (slot IN ('MORNING','LUNCH','DINNER','BEDTIME','AS_NEEDED','DAILY_UNSPECIFIED'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_schedule_slot_source') THEN
+    ALTER TABLE medication_schedules ADD CONSTRAINT ck_schedule_slot_source
+      CHECK (slot_source IN ('PRESCRIPTION','USER'));
+  END IF;
+END $$;
+
+-- 20-5) 삭제 기록 해시: 비밀값을 섞은 HMAC (P-09). 앱은 연결마다 SET app.hash_pepper = <.env 값>
+CREATE OR REPLACE FUNCTION fn_subject_hash(p_value TEXT) RETURNS TEXT
+LANGUAGE plpgsql STABLE AS $$
+DECLARE k TEXT := current_setting('app.hash_pepper', true);
+BEGIN
+  IF k IS NULL OR k = '' THEN
+    RAISE EXCEPTION 'HASH_PEPPER_NOT_SET';
+  END IF;
+  RETURN encode(hmac(convert_to(p_value, 'UTF8'), convert_to(k, 'UTF8'), 'sha256'), 'hex');
+END $$;
+COMMENT ON COLUMN deletion_logs.subject_hash IS 'fn_subject_hash(user_id 또는 document_id): HMAC-SHA256, 비밀값 없이 되돌릴 수 없음';
+
+-- 20-6) 회원 탈퇴 (해시만 교체)
+CREATE OR REPLACE FUNCTION fn_withdraw_user(p_user_id BIGINT) RETURNS TEXT[]
+LANGUAGE plpgsql AS $$
+DECLARE paths TEXT[]; counts JSONB;
+BEGIN
+  SELECT coalesce(array_agg(storage_path) FILTER (WHERE storage_path IS NOT NULL), '{}')
+    INTO paths FROM documents WHERE user_id = p_user_id;
+  SELECT jsonb_build_object(
+           'documents',     (SELECT count(*) FROM documents     WHERE user_id = p_user_id),
+           'guides',        (SELECT count(*) FROM guides        WHERE user_id = p_user_id),
+           'chat_sessions', (SELECT count(*) FROM chat_sessions WHERE user_id = p_user_id),
+           'consent_logs',  (SELECT count(*) FROM consent_logs  WHERE user_id = p_user_id))
+    INTO counts;
+  INSERT INTO deletion_logs (kind, subject_hash, deleted_counts, storage_paths)
+  VALUES ('USER_WITHDRAW', fn_subject_hash(p_user_id::text), counts, paths);
+  DELETE FROM users WHERE user_id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'USER_NOT_FOUND';
+  END IF;
+  RETURN paths;
+END $$;
+
+-- 20-7) 기록 지우기 (D8, D-11, D-19, D-20): 문서 단위 철회 기록 → 승인 전 오타 후보 삭제 → 연쇄 삭제
+--   지우는 것: 원본(경로 반환), 문서(진단명·병원명·OCR 원문·JSON), 처방 항목, 안내서·근거, 시간표,
+--             금기·주의 결과(다른 처방의 처방 간 결과 포함), 대화방·메시지, 신고
+--   남는 것: 동의·철회 행(document_id 는 NULL 로), 삭제 기록(HMAC·건수), 승인된 오타 사전 항목
+CREATE OR REPLACE FUNCTION fn_delete_document(p_user_id BIGINT, p_document_id UUID) RETURNS TEXT
+LANGUAGE plpgsql AS $$
+DECLARE v_path TEXT; v_terms TEXT; counts JSONB;
+BEGIN
+  SELECT d.storage_path, c.terms_version INTO v_path, v_terms
+    FROM documents d LEFT JOIN consent_logs c ON c.consent_log_id = d.consent_log_id
+   WHERE d.document_id = p_document_id AND d.user_id = p_user_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'DOCUMENT_NOT_FOUND';
+  END IF;
+  INSERT INTO consent_logs (user_id, consent_type, action, terms_version, channel, scope, document_id)
+  SELECT p_user_id, t, 'WITHDRAW', coalesce(v_terms, 'unknown'), 'WEB', 'DOCUMENT', p_document_id
+    FROM unnest(ARRAY['DOCUMENT_PROCESSING','HEALTH_SENSITIVE']) AS t;
+  SELECT jsonb_build_object(
+           'items',          (SELECT count(*) FROM document_items WHERE document_id = p_document_id),
+           'guides',         (SELECT count(*) FROM guides         WHERE document_id = p_document_id),
+           'chat_sessions',  (SELECT count(*) FROM chat_sessions  WHERE document_id = p_document_id))
+    INTO counts;
+  DELETE FROM ocr_typo_dictionary
+   WHERE NOT approved
+     AND from_item_id IN (SELECT item_id FROM document_items WHERE document_id = p_document_id);
+  INSERT INTO deletion_logs (kind, subject_hash, deleted_counts, storage_paths)
+  VALUES ('USER_DELETE_RECORD', fn_subject_hash(p_document_id::text),
+          counts, CASE WHEN v_path IS NULL THEN '{}'::text[] ELSE ARRAY[v_path] END);
+  DELETE FROM documents WHERE document_id = p_document_id AND user_id = p_user_id;
+  RETURN v_path;
+END $$;
+
+-- 20-8) 건강 민감정보 동의 전체 철회 (U2, D-02, D-13, P-10): 모든 처방 기록 + 문서 없는 대화방 + 건강정보
+CREATE OR REPLACE FUNCTION fn_withdraw_health_consent(p_user_id BIGINT, p_terms_version TEXT)
+RETURNS TEXT[]
+LANGUAGE plpgsql AS $$
+DECLARE r RECORD; p TEXT; paths TEXT[] := '{}';
+BEGIN
+  INSERT INTO consent_logs (user_id, consent_type, action, terms_version, channel, scope)
+  VALUES (p_user_id, 'HEALTH_SENSITIVE', 'WITHDRAW', p_terms_version, 'WEB', 'USER');
+  FOR r IN SELECT document_id FROM documents WHERE user_id = p_user_id LOOP
+    p := fn_delete_document(p_user_id, r.document_id);
+    IF p IS NOT NULL THEN paths := paths || p; END IF;
+  END LOOP;
+  DELETE FROM chat_sessions WHERE user_id = p_user_id AND document_id IS NULL;
+  DELETE FROM user_profiles WHERE user_id = p_user_id;
+  RETURN paths;
+END $$;
+
+-- 20-9) 원본 파일 삭제: 확인 완료 즉시 또는 읽기 완료 24시간 뒤 (D-03, PR-01). OCR 원문도 함께 비움
+CREATE OR REPLACE FUNCTION fn_purge_original(p_document_id UUID) RETURNS TEXT
+LANGUAGE plpgsql AS $$
+DECLARE v_path TEXT;
+BEGIN
+  SELECT storage_path INTO v_path FROM documents WHERE document_id = p_document_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'DOCUMENT_NOT_FOUND';
+  END IF;
+  UPDATE documents
+     SET storage_path = NULL, ocr_raw = NULL,
+         original_deleted_at = coalesce(original_deleted_at, now())
+   WHERE document_id = p_document_id;
+  IF v_path IS NOT NULL THEN
+    INSERT INTO deletion_logs (kind, subject_hash, deleted_counts, storage_paths)
+    VALUES ('ORIGINAL_FILE_PURGE', fn_subject_hash(p_document_id::text), '{"files":1}'::jsonb, ARRAY[v_path]);
+  END IF;
+  RETURN v_path;   -- 앱이 실제 파일을 지운다
+END $$;
+COMMENT ON COLUMN documents.ocr_raw IS '가림 처리 후 저장, 원본 삭제(fn_purge_original) 때 NULL (PR-01)';
+
+-- 20-10) 추천·상황 질문 시드 갱신 (D-09, D-12, S-04)
+DELETE FROM chat_preset_questions WHERE preset_code = 'SIT-OTHERHOSP';
+INSERT INTO chat_preset_questions (preset_code, category, question_text, show_when, sort_order) VALUES
+  ('SIT-OTHERDRUG','SITUATION','다른 약도 먹고 있어요',                                   '{}', 1010),
+  ('SIT-DROWSY',   'SITUATION','졸리거나 어지러워요',                                     '{}', 1025),
+  ('SIT-PREG',     'SITUATION','임신·수유 중이에요',                                       '{"pregnancy_or_breastfeeding":true}', 1030),
+  ('BND-WHY',      'BOUNDARY', '이 약이 제 병과 안 맞는 것 같아요. 왜 처방됐나요?',        '{}', 930)
+ON CONFLICT (preset_code) DO UPDATE
+  SET question_text = EXCLUDED.question_text, show_when = EXCLUDED.show_when, sort_order = EXCLUDED.sort_order;
 
 COMMIT;
 

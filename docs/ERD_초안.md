@@ -1,6 +1,7 @@
 # 안심약국 ERD
 
 > 기준: `infra/db/schema.sql` (PostgreSQL 16 + pgvector + pg_trgm)
+> 261125 수정: 기획 검토 결정 반영 (그림의 컬럼 추가 + 5장 변경 사항). 근거 `docs/review/decision_log_261125.md`
 > 요구사항 ID: USR 회원 · DOC 문서/OCR · MED 의약품/주의/안내 · CHT 챗봇 · SAF 안전 · SYS 시스템 · QAT 검증 · DAT 데이터
 > 범례: 🟦 기존 적재 테이블(구조 유지, 인덱스·`dur_rule_id`·FK만 보강) / ⬜ 신규 서비스 테이블
 
@@ -67,6 +68,8 @@ erDiagram
         bigint user_id FK
         text consent_type "TERMS·PRIVACY·HEALTH_SENSITIVE·DOCUMENT_PROCESSING"
         text action "AGREE·WITHDRAW (UPDATE 금지)"
+        text scope "USER·DOCUMENT (건별 동의)"
+        uuid document_id FK "문서 단위 동의·철회, 문서 삭제 시 NULL"
         text terms_version
         timestamptz created_at
     }
@@ -403,3 +406,22 @@ erDiagram
 6. **동의는 DB에서도 강제합니다.** `user_profiles`는 `HEALTH_SENSITIVE` 동의가 없으면 트리거가 저장을 막고(`HEALTH_CONSENT_REQUIRED`), `documents`는 본인의 `DOCUMENT_PROCESSING` AGREE 행이 있어야 INSERT됩니다. 건강 민감정보 동의를 철회하면 앱에서 `user_profiles` 행을 삭제해야 합니다.
 7. **보관은 이용자가 정합니다.** 정리된 처방 기록·안내서·시간표·대화는 회원 탈퇴 시 또는 이용자가 직접 삭제할 때까지 보관하고, 원본 사진·PDF만 24시간 뒤 지웁니다. 처방 기록 하나는 `fn_delete_document(user_id, document_id)`로 지우며, 연결된 안내서·시간표·DUR 결과·대화방·신고가 CASCADE로 함께 지워집니다.
 8. **탈퇴는 `fn_withdraw_user(user_id)` 한 번으로 처리합니다.** `deletion_logs`에 해시와 건수를 남기고 CASCADE로 삭제한 뒤, 앱이 지울 원본 파일 경로 배열을 돌려줍니다.
+
+## 5. 261125 변경 사항
+
+| 대상 | 변경 | 근거 |
+|---|---|---|
+| `consent_logs` | `scope`(USER·DOCUMENT), `document_id`(FK → documents, ON DELETE SET NULL, 지연 검사) 추가. 업로드마다 문서 단위 AGREE 2행, 기록 지우기 때 문서 단위 WITHDRAW 2행. 누적 전용 트리거는 FK가 `document_id`만 비우는 경우만 허용 | D-02, D-19, D-20 |
+| `fn_has_active_consent` | 사람 단위 행과 모든 AGREE 행 중 최신이 AGREE면 유효. 문서 단위 철회는 다른 문서·사람 단위 상태에 영향 없음 | D-02 |
+| `documents` 업로드 트리거 | 넘겨받은 동의 행 + 현재 유효한 문서 처리·건강 민감정보 동의 모두 확인, 오류 코드 `CONSENT_REQUIRED` | S-01, F-01, P-11 |
+| `documents.ocr_raw` | 가림 후 저장, `fn_purge_original`(확인 완료 즉시·24시간 예약)에서 원본 경로와 함께 비움 | D-03, PR-01 |
+| `document_items` | `confirmed_by`(AUTO·USER), `ai_excluded`(AI 안내 받지 않기) 추가. `include_in_analysis`는 진료기록 PDF 과거 약 선택용으로 유지 | W-01, D-14 |
+| `dur_alerts` | 이유 코드 `PAIR_ACROSS_DOCUMENTS`·`AGE_MATCHED`·`AGE_CHECK_NEEDED` 추가, `period_check_needed` 추가. 1차는 병용금기·임부·연령·노인 4종만 계산, 나이는 서버에서 `age_limit` 해석 | D-05, D-07, F-03, S-02 |
+| 관계 추가 | `dur_alerts.item_id_b` → 다른 문서의 `document_items`도 가리킬 수 있음(처방 간). 그 문서를 지우면 CASCADE로 함께 삭제 | D-05 |
+| `medication_schedules` | `slot`에 `DAILY_UNSPECIFIED`, `slot_source`(PRESCRIPTION·USER) 추가 | D-01, S-03 |
+| `deletion_logs.subject_hash` | `fn_subject_hash` = HMAC-SHA256(값, `app.hash_pepper`) | P-09 |
+| 새 함수 | `fn_withdraw_health_consent`(건강정보 동의 전체 철회), `fn_purge_original`(원본·OCR 원문 삭제), `fn_subject_hash` | P-10, D-03, P-09 |
+| `fn_delete_document` | 문서 단위 WITHDRAW 기록, 승인 전 오타 후보 삭제, 반환 건수 키 `items·guides·chat_sessions` | D-11, D-20 |
+| 시드 | `SIT-OTHERHOSP` → `SIT-OTHERDRUG`(다른 약도 먹고 있어요), `SIT-DROWSY` 추가, `SIT-PREG`에 임신·수유 조건, 경계 질문 `BND-WHY`(처방 이유) 추가 | D-09, D-12, S-04 |
+
+설계 결정 추가: 안내서와 대화는 문서 하나의 정보만 쓰고, 문서 경계를 넘는 것은 처방 간 병용금기뿐이다(D-04). 2차에서 문서를 섞는 기능을 넣을 때는 `guides`·`chat_sessions`에 `source_document_ids`를 둔다.

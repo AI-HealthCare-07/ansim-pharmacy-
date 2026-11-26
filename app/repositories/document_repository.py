@@ -54,3 +54,19 @@ async def update_ocr_quality(document_id, status: str, avg_confidence, char_coun
     from tortoise import connections
     await connections.get("default").execute_query_dict(
         UPDATE_OCR_QUALITY, [document_id, status, avg_confidence, char_count, error_code, ocr_raw])
+
+
+async def get_for_structure(document_id, user_id: int):
+    from tortoise import connections
+    rows = await connections.get("default").execute_query_dict(
+        "SELECT status, ocr_raw FROM documents WHERE document_id = $1 AND user_id = $2",
+        [document_id, user_id])
+    return rows[0] if rows else None
+
+
+async def save_structured(document_id, structured_json: str, visit_date, diagnoses_json: str) -> None:
+    from tortoise import connections
+    await connections.get("default").execute_query_dict(
+        "UPDATE documents SET status = 'STRUCTURED', structured_json = $2::jsonb,"
+        " visit_date = $3, diagnoses = $4::jsonb WHERE document_id = $1",
+        [document_id, structured_json, visit_date, diagnoses_json])

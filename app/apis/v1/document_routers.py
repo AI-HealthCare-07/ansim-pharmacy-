@@ -26,3 +26,38 @@ async def upload_document(
         )
     except UploadError as e:
         return JSONResponse(status_code=e.status, content={"error_code": e.code, "message": e.message})
+
+
+import json as _json
+import uuid as _uuid
+
+from app.repositories import document_repository as _repo
+from app.services.structuring import StructuringError, structure_ocr
+
+STRUCT_ERR_STATUS = {"PII_RESIDUAL": 422, "NO_API_KEY": 500, "STRUCTURE_INVALID": 502}
+
+
+@document_router.post("/{document_id}/structure")
+async def structure_document(document_id: _uuid.UUID):
+    row = await _repo.get_for_structure(document_id, DEMO_USER_ID)
+    if row is None:
+        return JSONResponse(status_code=404, content={"error_code": "NOT_FOUND", "message": "문서를 찾을 수 없어요."})
+    raw = row["ocr_raw"]
+    raw = _json.loads(raw) if isinstance(raw, str) else raw
+    if not raw or row["status"] not in ("EXTRACTED", "STRUCTURED"):
+        return JSONResponse(status_code=409, content={
+            "error_code": "NOT_READY", "message": "글자 읽기가 끝난 문서만 정리할 수 있어요."})
+    try:
+        doc, usage = await structure_ocr(raw["lines"])
+    except StructuringError as e:
+        return JSONResponse(status_code=STRUCT_ERR_STATUS.get(e.code, 500),
+                            content={"error_code": e.code, "message": e.message})
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("structure failed: %s", document_id)
+        return JSONResponse(status_code=502, content={
+            "error_code": "AI_UNAVAILABLE", "message": "AI 응답을 받지 못했어요. 잠시 뒤 다시 시도해 주세요."})
+    data = doc.model_dump(mode="json")
+    await _repo.save_structured(document_id, _json.dumps(data, ensure_ascii=False), doc.visit_date,
+                                _json.dumps(data["diagnoses"], ensure_ascii=False))
+    return {"document_id": str(document_id), "status": "STRUCTURED", "structured": data, "usage": usage}

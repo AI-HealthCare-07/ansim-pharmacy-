@@ -38,3 +38,19 @@ async def create_document_with_consents(
             document_id, user_id, doc_consent_id, doc_type, source_track, original_filename,
             mime_type, file_size_bytes, page_count, file_sha256, storage_path, purge_after])
         return rows[0]
+
+
+UPDATE_OCR_QUALITY = """
+UPDATE documents
+   SET status = $2, extraction_method = 'IMAGE_OCR', ocr_avg_confidence = $3,
+       ocr_char_count = $4, error_code = $5, extracted_at = now()
+ WHERE document_id = $1
+RETURNING status
+"""
+
+
+async def update_ocr_quality(document_id, status: str, avg_confidence, char_count: int | None,
+                             error_code: str | None) -> None:
+    from tortoise import connections
+    await connections.get("default").execute_query_dict(
+        UPDATE_OCR_QUALITY, [document_id, status, avg_confidence, char_count, error_code])

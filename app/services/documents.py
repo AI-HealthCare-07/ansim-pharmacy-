@@ -132,5 +132,38 @@ async def save_upload(
             raise UploadError(403, "CONSENT_REQUIRED", "동의가 확인되지 않아 문서를 저장하지 않았어요.")
         raise
 
-    return {**row, "doc_type": doc_type, "source_track": track,
-            "mime_type": f.mime_type, "page_count": f.page_count}
+    result = {**row, "doc_type": doc_type, "source_track": track,
+              "mime_type": f.mime_type, "page_count": f.page_count}
+    if f.mime_type.startswith("image/"):  # PDF는 품질 판정에서 제외(DOC-006)
+        result.update(await assess_image_quality(document_id, path))
+    return result
+
+
+RETAKE_MESSAGES = {
+    "TOO_FEW_CHARS": "글자가 거의 읽히지 않았어요. 문서 전체가 화면에 들어오게 다시 찍어 주세요.",
+    "LOW_CONFIDENCE": "사진이 흐리거나 어두워 글자를 정확히 읽기 어려워요. 밝은 곳에서 흔들리지 않게 다시 찍어 주세요.",
+}
+
+
+async def assess_image_quality(document_id: uuid.UUID, path: Path) -> dict:
+    """DOC-006: 사진 품질 판단. OCR 원문은 가림(6번) 전이라 저장하지 않는다."""
+    from decimal import Decimal
+
+    from starlette.concurrency import run_in_threadpool
+
+    from app.services.ocr import judge_quality, run_ocr
+
+    try:
+        v = await run_in_threadpool(lambda: judge_quality(run_ocr(str(path))))
+    except Exception:
+        await repo.update_ocr_quality(document_id, "FAILED", None, None, "OCR_FAILED")
+        return {"status": "FAILED", "quality": None,
+                "message": "글자를 읽는 중 문제가 생겼어요. 잠시 뒤 다시 올려 주세요."}
+
+    status = "EXTRACTED" if v.ok else "NEEDS_RETAKE"
+    await repo.update_ocr_quality(document_id, status, Decimal(str(v.avg_score)), v.char_count, v.reason)
+    return {
+        "status": status,
+        "quality": {"ok": v.ok, "reason": v.reason, "avg_confidence": v.avg_score, "char_count": v.char_count},
+        "message": RETAKE_MESSAGES.get(v.reason) if v.reason else None,
+    }

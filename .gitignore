@@ -12,3 +12,9 @@ wheels/
 .coverage
 *.coverage
 .coverage.*
+
+.env
+data/raw/
+data/pill_images/
+data/
+.DS_Store

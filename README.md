@@ -175,3 +175,12 @@ chmod +x scripts/certbot.sh
 - **API 추가**: `app/apis/v1/` 아래에 새로운 라우터 파일을 생성하고 `app/apis/v1/__init__.py`에 등록하세요.
 - **DB 모델 추가**: `app/models/`에 Tortoise 모델을 정의하고 `app/db/databases.py`의 `MODELS` 리스트에 추가하세요.
 - **AI 로직 추가**: `ai_worker/tasks/`에 새로운 처리 로직을 작성하고 `ai_worker/main.py`에서 호출하도록 구성하세요.
+
+## 화면 설계 (와이어프레임)
+
+| ① 문서 올리기 | ② 추출 결과 확인 | ③ 주의 분석·안내서 | ④ 복약 시간표 | ⑤ 복약 상담 |
+|---|---|---|---|---|
+| ![문서 올리기](docs/images/wireframe_01_upload.png) | ![추출 결과 확인](docs/images/wireframe_02_review.png) | ![주의 분석·안내서](docs/images/wireframe_03_guide.png) | ![복약 시간표](docs/images/wireframe_04_schedule.png) | ![복약 상담](docs/images/wireframe_05_chat.png) |
+
+- 상세 명세: [docs/wireframe_5screens_초안.md](docs/wireframe_5screens_초안.md)
+- 화면 흐름: ① 문서 올리기 → ② 추출 결과 확인 → ③ 주의 분석·안내서 → ④ 복약 시간표 → ⑤ 복약 상담

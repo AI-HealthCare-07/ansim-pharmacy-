@@ -1,6 +1,7 @@
 # 안심약국 API 명세서
 
-> 기준: 요구사항 정의서(261124 수정), `infra/db/schema.sql`, `docs/ERD.md`, `docs/wireframe_5screens.md`, `docs/privacy_policy_draft.md`
+> 기준: 요구사항 정의서(261125), `infra/db/schema.sql`, `docs/ERD_초안.md`, `docs/wireframe_5screens_초안.md`, `docs/privacy_policy_draft.md`, `docs/review/decision_log_261125.md`
+> 261125 수정: 기획 검토 결정(D-01~D-24, F·S·W·PR·P 항목) 반영. 바뀐 엔드포인트는 **8장 변경 사항**이 각 절보다 우선합니다.
 > 백엔드: FastAPI + Pydantic / 라우터: `app/routers/{auth, documents, drugs, guides, chat, system}`
 > 형식: OT 자료집 「기획 문서 안내 2」의 API 명세서 구성(API 개요 → 요청 → 응답)을 따릅니다.
 
@@ -38,21 +39,20 @@
 { "error_code": "FILE_TOO_LARGE", "message": "파일이 20MB를 넘어요.", "detail": { "max_bytes": 20971520 } }
 ```
 
-`message`는 화면에 그대로 보여줄 쉬운 문장입니다(SYS-002). 실패가 "주의 문구 없음"처럼 보이지 않도록, 오류는 항상 이 형식으로 따로 보냅니다.
+`message`는 화면에 그대로 보여줄 쉬운 문장입니다(SYS-002). FastAPI 기본 검증 오류(422)는 `RequestValidationError` 핸들러로 400 `VALIDATION_ERROR`로 바꿉니다(F-05). 실행 중 공공 API를 부르지 않으므로 502는 쓰지 않습니다(P-05). 실패가 "주의 문구 없음"처럼 보이지 않도록, 오류는 항상 이 형식으로 따로 보냅니다.
 
 | HTTP | error_code | 상황 |
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | 요청 형식 오류 (Pydantic 검증 실패, `detail`에 필드 목록) |
 | 401 | `UNAUTHORIZED` / `TOKEN_EXPIRED` / `INVALID_CREDENTIALS` | 토큰 없음 / 만료 / 로그인 실패 |
-| 403 | `HEALTH_CONSENT_REQUIRED` | 건강 민감정보 동의 없이 건강정보 저장 시도 (DB 트리거와 동일) |
+| 403 | `CONSENT_REQUIRED` | 업로드 요청에 문서 처리 동의·건강 민감정보 동의 체크가 없음 (D1, 건별 동의 D-02) |
+| 403 | `HEALTH_CONSENT_REQUIRED` | 건강 민감정보 동의가 현재 유효하지 않음 → 건강정보 저장(U4), 안내서(G1), 대화(C1·C3) 불가 (F-01) |
 | 404 | `NOT_FOUND` / `DOCUMENT_NOT_FOUND` | 없거나 내 것이 아님 |
 | 409 | `EMAIL_EXISTS` / `ITEMS_NOT_CONFIRMED` | 이메일 중복 / 확인 안 된 약이 있음 |
 | 413 | `FILE_TOO_LARGE` | 20MB 초과 |
 | 415 | `UNSUPPORTED_TYPE` | JPG·PNG·HEIC·PDF 외 |
 | 422 | `PDF_TOO_MANY_PAGES` | PDF 50쪽 초과 |
-| 428 | `CONSENT_REQUIRED` | 문서 처리 동의(DOCUMENT_PROCESSING) 없음 |
-| 429 | `LLM_DAILY_LIMIT` | AI 호출 일일 한도(기본 200회) 초과 |
-| 502 | `PUBLIC_DATA_UNAVAILABLE` | 공공 자료 조회 실패 → 해당 약은 '확인 필요' |
+| 429 | `LLM_DAILY_LIMIT` | AI 호출 일일 한도(서비스 전체 기준 200회) 초과. 화면: "오늘 AI 안내를 만들 수 있는 횟수를 다 썼어요. 주의 문구와 시간표는 그대로 볼 수 있어요." |
 | 503 | `LLM_UNAVAILABLE` | Claude API 실패. 주의 문구 원문은 계속 볼 수 있음 |
 
 ### 0-4. 목록 페이지네이션
@@ -68,22 +68,23 @@
 | A3 | POST | `/auth/refresh` | 토큰 재발급 | 쿠키 | USR-003 | — |
 | A4 | POST | `/auth/logout` | 로그아웃 | Y | USR-003 | — |
 | U1 | GET | `/users/me/consents` | 동의 현황 | Y | USR-004 | 1 |
-| U2 | POST | `/users/me/consents` | 동의·철회 기록 | Y | USR-004 | 1 |
+| U2 | POST | `/users/me/consents` | 동의 철회 (마이페이지 '동의 관리', 건강 민감정보 전체 철회) | Y | USR-004 | 마이 |
 | U3 | GET | `/users/me/health` | 건강정보 조회 | Y | USR-005 | 마이 |
 | U4 | PATCH | `/users/me/health` | 건강정보 수정 | Y | USR-005 | 마이 |
 | U5 | GET | `/users/me/records` | 내 기록 목록 | Y | USR-006 | 마이 |
 | U6 | DELETE | `/users/me` | 회원 탈퇴 | Y | USR-006 | 마이 |
-| D1 | POST | `/documents` | 문서 업로드 | Y | DOC-001·007 | 1 |
+| D1 | POST | `/documents` | 문서 업로드 (건별 동의 함께 기록) | Y | DOC-001·007, USR-004 | 1 |
 | D2 | GET | `/documents/{document_id}/status` | 처리 상태 | Y | DOC-002·006 | 1 |
 | D3 | GET | `/documents/{document_id}/items` | 추출 약 목록 | Y | DOC-003·005 | 2 |
-| D4 | PATCH | `/documents/{document_id}/items/{item_id}` | 약 한 줄 수정 | Y | DOC-005, MED-009 | 2 |
+| D4 | PATCH | `/documents/{document_id}/items/{item_id}` | 약 한 줄 수정 (AI 안내 받지 않기 포함) | Y | DOC-005, MED-009 | 2 |
+| D9 | PATCH | `/documents/{document_id}` | 진단명·진료일 수정, 처방 전체 AI 안내 받지 않기 | Y | DOC-005, SYS-005 | 2·기록 관리 |
 | D5 | POST | `/documents/{document_id}/items` | 빠진 약 추가 | Y | DOC-005 | 2 |
 | D6 | PUT | `/documents/{document_id}/confirmation` | 확인 완료 | Y | DOC-005 | 2 |
-| D7 | GET | `/documents/{document_id}/analysis` | 주의 분석·DUR | Y | MED-002~005 | 3 |
-| D8 | DELETE | `/documents/{document_id}` | 처방 기록 삭제 | Y | USR-006 | 2·3 |
+| D7 | GET | `/documents/{document_id}/analysis` | 나에게 맞춘 의약품 정보(DUR)·의약품 허가 정보·확인할 내용 | Y | MED-002~005, SAF-005 | 3 |
+| D8 | DELETE | `/documents/{document_id}` | 기록 지우기 (기록 관리 화면) | Y | USR-006 | 기록 관리 |
 | R1 | GET | `/drugs/search` | 약 이름 자동완성 | Y | DOC-004·005 | 2 |
 | R2 | GET | `/drugs/{item_seq}` | 약 상세 | Y | MED-001 | 2 |
-| G1 | POST | `/documents/{document_id}/guides` | 안내서 생성·재조회 | Y | MED-006·008, SAF-001·002·004, SYS-005 | 3 |
+| G1 | POST | `/documents/{document_id}/guides` | AI가 쉽게 풀어 쓴 복약 안내 생성·재조회 | Y | MED-006·008, SAF-001·002·004, SYS-005 | 3 |
 | G2 | GET | `/guides/{guide_id}` | 안내서 조회 | Y | MED-004·006 | 3 |
 | G3 | POST | `/guides/{guide_id}/feedback` | 좋아요·별로예요 | Y | MED-008 | 3 |
 | G4 | POST | `/guides/{guide_id}/regenerate` | 다시 만들기 | Y | MED-009 | 3 |
@@ -253,7 +254,7 @@
 **응답 200 (GET·PATCH 공통)**
 
 ```json
-{ "pregnancy_status": "PREGNANT", "is_breastfeeding": false, "chronic_conditions": ["고혈압"],
+{ "pregnancy_status": "NONE", "is_breastfeeding": false, "chronic_conditions": ["고혈압"],
   "allergies": [], "updated_at": "2026-12-08T14:00:00+09:00" }
 ```
 
@@ -379,9 +380,9 @@
   "items": [ { "item_id": 103, "line_no": 3, "drug_name": "이소트레티논캡슐10", "raw_text": "이소트레티논캡슐10 0.5 1 7 취침전",
                "ocr_confidence": 0.71, "edi_code": null, "dose_per_time": 0.5, "dose_unit": "캡슐",
                "times_per_day": 1, "total_days": 7, "timing_text": "취침 전",
-               "matched_item_seq": "200000004", "matched_item_name": "이소트레티노인캡슐10밀리그램",
+               "matched_item_seq": "200000004", "matched_item_name": "졸피뎀정10밀리그램",
                "match_method": "NAME_TRGM", "match_score": 0.62,
-               "match_candidates": [{"item_seq": "200000004", "item_name": "이소트레티노인캡슐10밀리그램", "score": 0.62}],
+               "match_candidates": [{"item_seq": "200000004", "item_name": "졸피뎀정10밀리그램", "score": 0.62}],
                "needs_review": true, "user_confirmed": false, "include_in_analysis": true, "dispensed_date": null } ] }
 ```
 
@@ -457,15 +458,15 @@
 | `warnings_by_item[].types[]` | 6유형 `warning_type`, `label`, `pinned`(건강정보 관련이라 위로), `sentences[]` 원문 |
 
 ```json
-{ "profile_flags": { "pregnancy_status": "PREGNANT", "is_breastfeeding": false, "age": 68, "chronic_conditions": ["고혈압"] },
+{ "profile_flags": { "pregnancy_status": "NONE", "is_breastfeeding": false, "age_band": "60대", "is_65_or_over": true, "age_note": "출생연도 기준", "chronic_conditions": ["고혈압"] },
   "dur_alerts": [ { "alert_id": 1, "dur_type": "CONCOMITANT", "badge": "함께 복용 금기", "trigger_reason": "PAIR_IN_DOCUMENT",
                     "items": [{"item_id": 101, "name": "와파린정2밀리그램"}, {"item_id": 102, "name": "쎄레브렉스캡슐200밀리그램"}],
                     "rule": { "dur_rule_id": 5521, "ingr_name_a": "와파린", "ingr_name_b": "세레콕시브", "grade": "1",
                               "age_limit": null, "prohibition_content": "출혈 위험 증가" },
                     "source": { "source_name": "DUR 성분단위 정보", "base_label": "2026.6 고시" } } ],
   "dur_unlinked_item_ids": [],
-  "warnings_by_item": [ { "item_seq": "200000004", "item_name": "이소트레티노인캡슐10밀리그램", "status": "OK",
-                          "types": [ { "warning_type": "SPECIAL_POP", "label": "임신·수유·고령자", "pinned": true,
+  "warnings_by_item": [ { "item_seq": "200000004", "item_name": "졸피뎀정10밀리그램", "status": "OK",
+                          "types": [ { "warning_type": "DAILY_LIFE", "label": "일상생활 주의(졸음·운전)", "pinned": true,
                                        "sentences": [{ "warning_id": 9001, "article_title": "임부 및 수유부에 대한 투여", "sentence": "…", "life_flags": [] }] } ],
                           "source": { "source_name": "식약처 의약품 제품 허가정보", "base_date": "2026-11-20" } } ] }
 ```
@@ -507,7 +508,7 @@
 **응답 200**
 
 ```json
-[ { "item_seq": "200000004", "item_name": "이소트레티노인캡슐10밀리그램", "entp_name": "○○제약", "score": 0.90 } ]
+[ { "item_seq": "200000004", "item_name": "졸피뎀정10밀리그램", "entp_name": "○○제약", "score": 0.90 } ]
 ```
 
 목표 응답 시간은 0.5초 이내입니다. 화면은 250ms 디바운스로 호출합니다.
@@ -524,7 +525,7 @@
 **응답 200**
 
 ```json
-{ "item_seq": "200000004", "item_name": "이소트레티노인캡슐10밀리그램", "entp_name": "○○제약",
+{ "item_seq": "200000004", "item_name": "졸피뎀정10밀리그램", "entp_name": "○○제약",
   "efficacy": "…", "usage": "…", "easy_description": null, "pill_image_url": "https://…",
   "source": { "source_name": "식약처 의약품 제품 허가정보", "base_date": "2026-11-20" } }
 ```
@@ -686,7 +687,7 @@
 { "session_id": "7a9e…",
   "ai_notice": "이 상담은 생성형 AI(Claude)가 11-26 처방 약과 등록하신 건강정보를 기준으로, 공식 자료 안에서 답해 드려요.",
   "context": { "items": [{"item_seq": "200000003", "name": "와파린정2밀리그램"}],
-               "profile_flags": {"pregnancy_status": "PREGNANT", "age": 68, "chronic_conditions": ["고혈압"]},
+               "profile_flags": {"pregnancy_status": "NONE", "age_band": "60대", "is_65_or_over": true, "chronic_conditions": ["고혈압"]},
                "diagnoses": ["고혈압"] },
   "presets": [ {"preset_code": "GEN-HOWTO", "category": "GENERAL", "question_text": "이 약은 언제, 어떻게 먹어야 하나요?"},
                {"preset_code": "BND-STOP", "category": "BOUNDARY", "question_text": "속이 쓰린데 약을 임의로 끊거나 반만 먹어도 되나요?"} ],
@@ -837,6 +838,95 @@
 **응답 200**: `{ "status": "ok", "db": "ok", "version": "v0.1" }`. docker compose의 healthcheck에 씁니다.
 
 ---
+
+---
+
+## 8. 261125 변경 사항 (각 절보다 우선)
+
+> 근거: `docs/review/decision_log_261125.md`. 괄호 안은 결정·지적 번호.
+
+### 8-1. 공통
+
+- **화면 용어**: 사용자에게 보이는 `message`·고정 문구에는 "DUR" 대신 "나에게 맞춘 의약품 정보", "식약처 금기·주의 정보"를 쓰고, 출처 줄에만 "식약처 고시 의약품 적정사용(DUR) 정보"를 씁니다. "공식 자료"처럼 뭉뚱그리지 않고 기관·자료명을 밝힙니다 (D-21, D-23).
+- **LLM 입력의 나이**: 정확한 나이 대신 `age_band`(예: 60대)와 `is_65_or_over`만 보냅니다. 정확한 나이 판단은 DB에서만 합니다 (PR-07).
+- **LLM 전송 전 가림 대상**: 환자 이름, 주민등록번호, 전화번호, **주소**, 병원 환자 등록번호, 교부번호, QR·바코드 문자열, 의료기관명·주소·전화, 의사 이름·면허번호, 약국명. 가린 건수는 `pii_mask_counts`에 기록 (F-06, PR-02, D-21 ⑦).
+- **AI 안내를 받지 않기로 한 약**(`ai_excluded=true`)은 어떤 LLM 호출에도 넣지 않습니다. 규칙 기반 처리(금기·주의 확인, 허가 정보 원문, 시간표)에는 계속 포함합니다 (D-14).
+- **문서 경계**: 안내서와 대화는 문서 하나의 정보만 씁니다. 문서 경계를 넘는 것은 금기·주의 확인(D7)의 처방 간 병용금기뿐입니다 (D-04, D-05).
+
+### 8-2. U2 동의 철회 (마이페이지 '동의 관리')
+
+- 업로드 때의 동의는 D1이 기록하므로 U2는 **철회 전용**으로 씁니다.
+- `{"consent_type": "HEALTH_SENSITIVE", "action": "WITHDRAW"}` → 확인 창 후 호출. 처리: `fn_withdraw_health_consent` — 사람 단위 WITHDRAW 기록 → 모든 문서 `fn_delete_document` → 문서와 연결되지 않은 대화방 삭제 → `user_profiles` 삭제 (D-02, P-10). 응답에 지운 건수 `{"deleted": {"documents": 2, "guides": 2, "chat_sessions": 2}}`.
+- 철회 후에도 회원 정보와 동의 기록은 남고, 업로드·안내서·대화는 403 `HEALTH_CONSENT_REQUIRED` (D-13 ④).
+
+### 8-3. D1 문서 업로드 (건별 동의)
+
+- 요청에서 `consent_log_id`를 **삭제**하고 `agree_document_processing`, `agree_health_sensitive`(둘 다 `true` 필수)를 받습니다. 하나라도 빠지면 403 `CONSENT_REQUIRED` (D-02, D-19).
+- 서버는 `document_id`(UUID)를 먼저 만들고, 한 트랜잭션에서 동의 2행(`consent_logs`, `scope=DOCUMENT`, `document_id` 연결)과 `documents` 행을 만듭니다. 업로드 트리거는 해당 문서의 동의 행과 `fn_has_active_consent`를 함께 확인 (S-01).
+- 처리 순서: 형식·크기·쪽수 검사 → 저장 → 글자 읽기(사진 OCR / PDF 직접 추출) → **가림 후** `ocr_raw` 저장 → **가림 후** Haiku 구조화(DOC-003) → 약 연결 (F-06, PR-01, PR-02).
+- 진료기록 PDF(`A_PDF_PARSE`)는 OCR 신뢰도가 없으므로 `NEEDS_RETAKE` 판정에서 제외 (P-06).
+- 선택 기능: 처리 중 [취소] → `DELETE /documents/{id}`와 같은 삭제, LLM 호출 전이면 전송 없음 (D-02).
+
+### 8-4. D3 추출 약 목록 / D4 약 한 줄 수정 / D9 문서 수정
+
+- D3 각 줄에 `confirmed_by`(`AUTO`|`USER`|null) 추가. 보험코드 일치(`EDI_EXACT`)이고 점수 0.7 이상이면 서버가 `user_confirmed=true, confirmed_by=AUTO`로 미리 표시. 화면 배지는 "보험코드로 약 이름 확인" (W-01, D-12).
+- D4에 `ai_excluded`(boolean) 수정 허용: 약별 "AI 안내 받지 않기" (D-14). `include_in_analysis`는 진료기록 PDF 과거 약 선택용으로 그대로 둠.
+- **D9 신설** `PATCH /documents/{document_id}`: `diagnoses`, `visit_date` 수정(F-04), `ai_excluded: true`면 그 문서의 모든 약 `ai_excluded=true`(기록 관리의 [AI 안내만 받지 않기], D-17). 진단명이 바뀌면 안내서에 "다시 만들기 필요" 표시.
+- (선택) 확인 완료 뒤에도 D4·D5 허용, 수정 시 금기·주의 다시 계산 (W-11).
+
+### 8-5. D6 확인 완료
+
+- 확인 완료 시 `fn_purge_original` 호출: **원본 파일 즉시 삭제, `ocr_raw` 비움**. 확인하지 않으면 읽기 완료 24시간 뒤 예약 작업이 같은 처리 (D-03, PR-01).
+- 2단계 미리보기 자리 문구: 확인 전 24시간 경과 "원본은 개인 민감정보 보호를 위해 삭제되었어요. 가지고 계신 종이 처방전이나 약봉투와 비교하며 확인해 주세요. 잘 맞지 않으면 다시 올려 주세요." / 확인 후 "원본은 확인을 마친 뒤 개인 민감정보 보호를 위해 삭제했어요." (D-03)
+
+### 8-6. D7 나에게 맞춘 의약품 정보 · 의약품 허가 정보 · 확인할 내용
+
+- 열 때마다 `fn_refresh_dur_alerts` 재계산 (D-05).
+- **1차 계산 유형**: 병용금기, 연령금기, 임부금기, 노인주의 4종(D-07, DUR 유형별 건수 확인 후 확정). 나이 판단은 서버에서 `age_limit` 원문을 해석, 해석 불가는 `CHECK_NEEDED` (F-03, S-02). 나이 표기는 "68세(출생연도 기준)" (P-02).
+- **처방 간 병용금기**: 같은 사용자가 확인을 마친 다른 문서 중 복용 기간(진료·조제일 ~ +총 일수)이 겹치는 약 포함, `trigger_reason: PAIR_ACROSS_DOCUMENTS`. 일수 없는 약은 최근 30일 처방만, `period_check_needed: true` (D-05).
+- 응답 구조(화면 세 영역, D-24): `personal_info`(나에게 맞춘 의약품 정보: 금기·주의 목록, 출처 `source_label: "식약처 고시 의약품 적정사용(DUR) 정보"`, 기준일), `permit_info`(의약품 허가 정보: 약별 6유형 원문, 출처 "식약처 의약품 제품 허가정보"), `coverage_notices`(고정 안내 문구 배열), `coverage_questions`(확인할 내용).
+- `coverage_notices` 고정 문구: "올려 주신 처방의 약끼리만 확인했어요. 다른 병원 약이나 사서 드시는 약이 있으면 약사에게 함께 보여주세요." / "영양제·건강기능식품은 식약처 금기·주의 정보에 없어서 여기서 살펴볼 수 없어요." / "병원·약국에서 처방·조제할 때 하는 건강보험심사평가원의 실시간 점검과는 달라요. 그동안 처방받은 약 기록 전체를 보지 않고, 올려 주신 처방만 살펴봐요." / 지운 처방이 있으면 "지운 처방의 약은 확인에 포함되지 않아요." (D-06, D-13, D-21, D-23)
+- 결과 0건 문구: "올려 주신 약끼리는 식약처 금기·주의 정보에서 확인된 항목이 없어요. 함께 먹어도 안전하다는 뜻은 아니에요." (W-03)
+- `coverage_questions`: `[{"key","text","reason","gap_type"}]`. `gap_type` = `NOT_UPLOADED`·`WITHDRAWN`·`DURATION_UNKNOWN`·`TIME_UNSPECIFIED`·`NO_OFFICIAL_DATA`·`DRUG_NOT_MATCHED`·`DUR_UNLINKED`(확인 못한 내용) · `EXCLUDED_BY_USER`·`PROFESSIONAL_JUDGMENT`(안내하지 못하는 내용) · `PAIR_FOUND`. 규칙 기반(LLM 미사용). AI 안내를 받지 않기로 한 약은 이름 대신 "AI 안내를 받지 않기로 하신 약"으로 (D-15, D-16).
+- 쿼리 `?other_meds=yes|no|later`: 첫 확인 때 짧은 질문의 답. **저장하지 않고** 이번 응답의 질문 생성에만 사용 (D-16).
+- (선택) 고위험 약 표시 `high_risk: true`(분류번호 또는 진단명 C코드) → 3단계 맨 위 고정 안내 (D-10, 컬럼 확인 후).
+
+### 8-7. D8 기록 지우기 (기록 관리)
+
+- 화면은 처방 카드의 [기록 관리] → 관리 화면에서 [AI 안내만 받지 않기](D9) / [기록 지우기](D8) / [그대로 두기] (D-17, D-19, D-21).
+- 처리: `fn_delete_document` 한 번으로 그 문서 동의의 WITHDRAW 기록(`scope=DOCUMENT`) →(원본, 문서, 처방 항목, 안내서·근거, 시간표, 금기·주의 결과, 대화방, 신고, 승인 전 오타 후보) → `deletion_logs`(HMAC 해시·건수) (D-11, D-20, P-09).
+- 응답: `{"deleted": {"items": 2, "guides": 1, "chat_sessions": 1}}` — 확인 창의 "지워지는 것" 건수와 같은 값.
+
+### 8-8. G1 AI가 쉽게 풀어 쓴 복약 안내
+
+- 건강 민감정보 동의 확인 → 없으면 403 `HEALTH_CONSENT_REQUIRED` (F-01).
+- 입력: 그 문서의 `include_in_analysis=true`이고 `ai_excluded=false`인 약만, 진단명은 그 문서 것만, 건강정보는 `user_profiles` (D-04, D-14).
+- 프롬프트·출력 검사(SAF-001) 금지: 처방 원문에 없는 시간대 표현("아침" 등, D-01), 약의 용도를 진단과 엮은 추정("이 약은 ○○ 때문에", D-12), 증상 원인 판단 양방향("~때문이에요/~때문은 아니에요/~의 부작용이에요", D-18), 단정 표현. `refs` 번호가 `citations`에 없으면 그 문장 제거 (F-02).
+- 허가 효능을 보여줄 때 고정 문구 `OFF_LABEL_NOTE`: "의사는 환자 상태에 따라 허가 내용과 다른 이유로 처방하기도 해요. 처방 이유가 궁금하면 처방한 의사나 조제한 약사에게 물어보세요. 처방받은 약은 임의로 끊지 말고 먼저 상의하세요." (D-12)
+- (선택) 고위험 약은 일반 생활 수칙을 만들지 않고 허가 원문·의료진 상담 안내만 (D-10).
+
+### 8-9. G5 복약 시간표
+
+- `slot`에 `DAILY_UNSPECIFIED` 추가: 시간 표시 없는 하루 1번 약은 "하루 1번 · 시간은 처방 안내대로" 칸 (D-01, S-03).
+- 배치 규칙은 위에서부터 먼저 맞는 하나: 복용 시점 글자(취침·자기 전 등) → 횟수(2번 아침·저녁, 3번 아침·점심·저녁, 4번 + 취침 전) → 1번은 `DAILY_UNSPECIFIED`.
+- 각 줄에 `slot_source`(`PRESCRIPTION`|`USER`). (선택) `PATCH /guides/{guide_id}/schedule/{schedule_id}`로 사용자가 약사에게 들은 시간을 골라 이동, "시간: 직접 선택" 표시.
+
+### 8-10. C1 대화방 / C3 질문 보내기 / C4 방문 전 질문
+
+- C1: 건강 민감정보 동의 확인(F-01). 같은 문서로 다시 요청하면 기존 대화방 반환(P-07). `context`에서 AI 안내를 받지 않기로 한 약은 제외하고 `excluded_count`만 (D-14).
+- C3 처리 순서: ① 가림 ② **응급 키워드 규칙**(처방·동의·철회와 무관하게 항상, 맞으면 고정 응급 카드 `answer_status: EMERGENCY`, LLM 미호출) ③ 경계 규칙(끊기·양 조절, **처방 이유·적정성 질문** → `BOUNDARY`) ④ Haiku 2차 분류 ⑤ 답변 생성 ⑥ **출력 검사**(G1과 같은 금지 목록, refs↔citations 대조) (P-01, D-12, D-18, F-02). Claude 장애(503) 때도 ②는 동작.
+- 증상 질문의 답에는 항상 "올려 주신 약 말고 다른 약이나 영양제도 원인일 수 있어요"를 붙이고, 응답에 `added_question`(확인할 내용에 추가된 질문)을 넣음 (D-16, D-18).
+- AI 안내를 받지 않기로 한 약을 물으면: "이 약은 AI 안내에서 빼 두셨어요. 식약처 허가 정보 원문은 3단계에서 볼 수 있어요." (D-14)
+- C4 상황 버튼 프리셋: `SIT-OTHERDRUG`(다른 약도 먹고 있어요 / 다른 병원 약 · 약국에서 산 약 · 영양제), `SIT-DROWSY`(졸리거나 어지러워요), `SIT-PREG`은 임신·수유 정보가 있을 때만 (D-09, S-04).
+- 첫 메시지 AI 고지: "이 상담은 생성형 AI(Claude)가 올려 주신 처방과 건강정보를 기준으로, 식약처 의약품 허가정보·금기·주의 정보와 질병관리청 국가건강정보포털 자료 안에서만 답해 드려요." (D-21 ⑩)
+
+### 8-11. C6·G6 신고
+
+- 대상은 AI가 쓴 영역(안내서·생활 수칙·답변)만. 사유에 "약 이름·복용량이 처방과 달라요"는 넣지 않음(그 경우는 약 정보 고치기). 화면 버튼 문구 "틀린 내용 알리기" (W-11).
+
+### 8-12. 2차 메모
+
+- 내 약 목록(사람 중심), 「내가 먹는 약! 한눈에」 투약이력 읽기와 동일성분·효능군 중복(D-22), 철회 시 "지금 먹는 약에 남기기"(D-13 ⑦), 약사에게 보여주기 화면, 영양제 정보.
 
 ## 부록. 2차(선택) 범위
 

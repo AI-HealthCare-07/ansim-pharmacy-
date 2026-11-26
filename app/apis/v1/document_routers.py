@@ -61,3 +61,35 @@ async def structure_document(document_id: _uuid.UUID):
     await _repo.save_structured(document_id, _json.dumps(data, ensure_ascii=False), doc.visit_date,
                                 _json.dumps(data["diagnoses"], ensure_ascii=False))
     return {"document_id": str(document_id), "status": "STRUCTURED", "structured": data, "usage": usage}
+
+
+from pydantic import BaseModel as _BaseModel, Field as _Field
+
+from app.services.structuring import KCD_RE as _KCD_RE
+
+
+class DiagnosisEdit(_BaseModel):
+    kcd_code: str | None = _Field(None, max_length=10)
+    name: str | None = _Field(None, max_length=100)
+
+
+class DiagnosesEditRequest(_BaseModel):
+    diagnoses: list[DiagnosisEdit] = _Field(max_length=20)
+
+
+@document_router.patch("/{document_id}/diagnoses")
+async def edit_diagnoses(document_id: _uuid.UUID, body: DiagnosesEditRequest):
+    items = []
+    for d in body.diagnoses:
+        code = (d.kcd_code or "").strip().upper().replace(" ", "") or None
+        if code and not _KCD_RE.match(code):
+            return JSONResponse(status_code=400, content={
+                "error_code": "INVALID_KCD", "message": f"상병코드 형식이 맞지 않아요: {code} (예: I10.9)"})
+        name = (d.name or "").strip() or None
+        if code or name:
+            items.append({"kcd_code": code, "name": name, "kcd_autocorrected": False, "user_edited": True})
+    row = await _repo.update_diagnoses(document_id, DEMO_USER_ID, _json.dumps(items, ensure_ascii=False))
+    if row is None:
+        return JSONResponse(status_code=409, content={
+            "error_code": "NOT_EDITABLE", "message": "정리가 끝났고 아직 확정하지 않은 문서만 고칠 수 있어요."})
+    return {"document_id": str(document_id), "status": row["status"], "diagnoses": items}

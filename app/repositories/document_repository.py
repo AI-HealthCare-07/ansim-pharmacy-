@@ -70,3 +70,14 @@ async def save_structured(document_id, structured_json: str, visit_date, diagnos
         "UPDATE documents SET status = 'STRUCTURED', structured_json = $2::jsonb,"
         " visit_date = $3, diagnoses = $4::jsonb WHERE document_id = $1",
         [document_id, structured_json, visit_date, diagnoses_json])
+
+
+async def update_diagnoses(document_id, user_id: int, diagnoses_json: str):
+    from tortoise import connections
+    rows = await connections.get("default").execute_query_dict(
+        "UPDATE documents SET diagnoses = $3::jsonb,"
+        " structured_json = jsonb_set(coalesce(structured_json, '{}'::jsonb), '{diagnoses}', $3::jsonb)"
+        " WHERE document_id = $1 AND user_id = $2 AND status IN ('STRUCTURED', 'MATCHED')"
+        " RETURNING status",
+        [document_id, user_id, diagnoses_json])
+    return rows[0] if rows else None

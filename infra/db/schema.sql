@@ -832,15 +832,21 @@ $$;
 CREATE OR REPLACE FUNCTION fn_search_medicines(p_query TEXT, p_limit INT DEFAULT 10)
 RETURNS TABLE (item_seq item_seq_t, item_name TEXT, entp_name TEXT, score NUMERIC)
 LANGUAGE sql STABLE AS $$
-  WITH q AS (SELECT fn_norm_drug_name(p_query) AS qn)
+  -- 괄호 속 성분명은 정규화에서 지워지므로 원래 이름으로도 찾는다(0.6점, 자동 확인 0.7 미만)
+  WITH q AS (SELECT fn_norm_drug_name(p_query) AS qn,
+                    regexp_replace(p_query, '\s', '', 'g') AS qr)
   SELECT m.item_seq::item_seq_t, m.item_name, m.entp_name,
-         round(greatest(similarity(fn_norm_drug_name(m.item_name), q.qn),
-                        CASE WHEN fn_norm_drug_name(m.item_name) LIKE q.qn || '%' THEN 0.9 ELSE 0 END)::numeric, 3)
+         round(greatest(
+           similarity(fn_norm_drug_name(m.item_name), q.qn),
+           CASE WHEN fn_norm_drug_name(m.item_name) LIKE q.qn || '%' THEN 0.9 ELSE 0 END,
+           CASE WHEN m.item_name LIKE '%' || q.qr || '%' THEN 0.6 ELSE 0 END
+         )::numeric, 3)
     FROM medicines m, q
    WHERE m.cancel_name = '정상'
      AND length(q.qn) >= 2
      AND (fn_norm_drug_name(m.item_name) % q.qn
-          OR fn_norm_drug_name(m.item_name) LIKE '%' || q.qn || '%')
+          OR fn_norm_drug_name(m.item_name) LIKE '%' || q.qn || '%'
+          OR m.item_name LIKE '%' || q.qr || '%')
    ORDER BY 4 DESC, length(m.item_name)
    LIMIT p_limit
 $$;

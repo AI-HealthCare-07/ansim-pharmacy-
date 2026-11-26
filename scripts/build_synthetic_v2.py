@@ -152,8 +152,15 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pool", type=int, default=600)
     ap.add_argument("--records", type=int, default=2000)
+    ap.add_argument("--seed", type=int, default=0, help="난수 씨앗")
+    ap.add_argument("--out", default=str(OUT), help="출력 폴더")
+    ap.add_argument("--exclude", default="", help="제외할 drug_pool.json (쉼표 구분)")
     args = ap.parse_args()
-    rng = random.Random(SEED)
+    global OUT
+    OUT = Path(args.out)
+    OUT.mkdir(parents=True, exist_ok=True)
+
+    rng = random.Random(args.seed)
     skip = {d["item_seq"] for f in filter(None, args.exclude.split(",")) for d in json.loads(Path(f).read_text(encoding="utf-8"))}
     pool = await load_pool(args.pool, rng, skip)
     OUT.mkdir(parents=True, exist_ok=True)

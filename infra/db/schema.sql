@@ -850,6 +850,7 @@ LANGUAGE sql STABLE AS $$
          )::numeric, 3)
     FROM medicines m, q2
    WHERE m.cancel_name = '정상'
+     AND m.item_name NOT LIKE '%수출용%'  -- 국내 조제되지 않는 수출용 제품 제외(수출명만 적힌 국내 제품은 남김)
      AND length(q2.qn) >= 2
      AND (fn_norm_drug_name(m.item_name) % q2.qn
           OR fn_norm_drug_name(m.item_name) LIKE '%' || q2.qn || '%'

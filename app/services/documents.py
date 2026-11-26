@@ -154,16 +154,28 @@ async def assess_image_quality(document_id: uuid.UUID, path: Path) -> dict:
     from app.services.ocr import judge_quality, run_ocr
 
     try:
-        v = await run_in_threadpool(lambda: judge_quality(run_ocr(str(path))))
+        res = await run_in_threadpool(run_ocr, str(path))
+        v = judge_quality(res)
     except Exception:
         await repo.update_ocr_quality(document_id, "FAILED", None, None, "OCR_FAILED")
         return {"status": "FAILED", "quality": None,
                 "message": "글자를 읽는 중 문제가 생겼어요. 잠시 뒤 다시 올려 주세요."}
 
     status = "EXTRACTED" if v.ok else "NEEDS_RETAKE"
-    await repo.update_ocr_quality(document_id, status, Decimal(str(v.avg_score)), v.char_count, v.reason)
+    error_code, ocr_raw, mask_counts = v.reason, None, None
+    if v.ok:  # 통과한 사진만 가린 원문을 저장한다. 가림 전 원문은 어디에도 남기지 않는다.
+        import json
+        from app.services.pii_mask import find_residual_pii, mask_lines
+        masked, mask_counts = mask_lines(res.lines)
+        if find_residual_pii("\n".join(masked)):
+            error_code = "PII_RESIDUAL"
+        else:
+            ocr_raw = json.dumps({"lines": masked, "scores": res.scores,
+                                  "mask_counts": mask_counts}, ensure_ascii=False)
+    await repo.update_ocr_quality(document_id, status, Decimal(str(v.avg_score)),
+                                  v.char_count, error_code, ocr_raw)
     return {
         "status": status,
-        "quality": {"ok": v.ok, "reason": v.reason, "avg_confidence": v.avg_score, "char_count": v.char_count},
+        "quality": {"ok": v.ok, "reason": v.reason, "avg_confidence": v.avg_score, "char_count": v.char_count, "mask_counts": mask_counts},
         "message": RETAKE_MESSAGES.get(v.reason) if v.reason else None,
     }

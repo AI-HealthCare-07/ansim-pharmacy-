@@ -26,7 +26,7 @@ LABELS = [
      "[등록번호]"),
     ("DOCTOR", r"처방\s*의사|처방의(?!료)|의사\s*성명|담당의|주치의|진료의(?![가-힣])", "[의사]"),
     ("PHARMACIST",
-     r"(?:조제|관리|개설|담당|근무|복약지도)\s*약사(?:\s*성명|명)?"
+     r"(?:조제|관리|개설|대표|담당|근무|복약지도)\s*약사(?:\s*성명|명)?"
      r"|약사\s*성명|약사명|조제자|(?<![가-힣])약사(?![가-힣])",
      "[약사]"),
     ("PHONE", r"(?:전화(?:\s*번호)?|TEL|Tel|FAX|Fax|팩스)(?=[\s:：.)]*\(?\d)", "[전화]"),
@@ -98,7 +98,7 @@ def mask_lines(lines: list[str]) -> tuple[list[str], dict]:
             if n:
                 counts[cat] += n
         out.append(line)
-    return out, dict(counts)
+    return mask_org_neighbors(out, dict(counts))
 
 
 RESIDUAL = {
@@ -121,3 +121,29 @@ def find_residual_pii(text: str) -> list[str]:
 def age_band(birth_year: int, this_year: int) -> str:
     """SYS-005: AI에는 나이 대신 나이대만 보낸다."""
     return f"{((this_year - birth_year) // 10) * 10}대"
+
+
+# 장식 글꼴 약국 이름은 OCR이 깨진 글자로 읽어 모양 규칙에 안 걸린다(예: 이무문작영).
+# 약국을 가리키는 줄 앞뒤의 짧은 글자 줄을 위치로 가린다. 병원 칸은 진단명과 붙어 있을 수 있어 기준에서 뺀다.
+ANCHORS = ("[전화]", "[주소]", "[약사]", "[기관영문명]", "[사업자번호]", "[약국]")
+KEEP = re.compile(r"\d|\[|mg|ml|정$|캡슐|시럽|복용|식후|식전|아침|점심|저녁|취침|공복"
+                  r"|상병|진단|질병|병명|분류|증$|염$|압$")
+
+ADDR_EXTRA = re.compile(r"아파트|빌딩|타워|프라자|플라자|상가|오피스텔|\d+\s*층|번\s*출구|바로\s*앞|맞은\s*편")
+
+
+def mask_org_neighbors(lines: list[str], counts: dict, window: int = 2) -> tuple[list[str], dict]:
+    anchors = {i for i, line in enumerate(lines) if any(a in line for a in ANCHORS)}
+    out = list(lines)
+    for i in sorted(anchors):
+        for j in range(max(0, i - window), min(len(out), i + window + 1)):
+            core = re.sub(r"[\s.,·()]", "", out[j])
+            if j not in anchors and "[" not in out[j] and ADDR_EXTRA.search(out[j]):
+                out[j] = "[주소]"
+                counts["ADDRESS"] = counts.get("ADDRESS", 0) + 1
+                continue
+            if j in anchors or not 2 <= len(core) <= 20 or KEEP.search(out[j]):
+                continue
+            out[j] = "[약국정보]"
+            counts["ORG_NEAR"] = counts.get("ORG_NEAR", 0) + 1
+    return out, counts

@@ -14,6 +14,7 @@ TYPE_MAP = {
     "용량주의": "DOSAGE",
     "투여기간주의": "DURATION",
     "노인주의": "ELDERLY",
+    "노인주의_해열진통소염제": "ELDERLY",
     "효능군중복": "DUPLICATE_CLASS",
     "서방정분할주의": "SPLIT_CAUTION",
 }

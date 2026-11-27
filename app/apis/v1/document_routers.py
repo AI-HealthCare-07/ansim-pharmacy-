@@ -33,6 +33,7 @@ import uuid as _uuid
 
 from app.repositories import document_repository as _repo
 from app.services.structuring import StructuringError, structure_ocr
+from app.services.matching import match_document
 
 STRUCT_ERR_STATUS = {"PII_RESIDUAL": 422, "NO_API_KEY": 500, "STRUCTURE_INVALID": 502}
 
@@ -60,7 +61,8 @@ async def structure_document(document_id: _uuid.UUID):
     data = doc.model_dump(mode="json")
     await _repo.save_structured(document_id, _json.dumps(data, ensure_ascii=False), doc.visit_date,
                                 _json.dumps(data["diagnoses"], ensure_ascii=False))
-    return {"document_id": str(document_id), "status": "STRUCTURED", "structured": data, "usage": usage}
+    items = await match_document(document_id, data["drugs"])
+    return {"document_id": str(document_id), "status": "MATCHED", "structured": data, "items": items, "usage": usage}
 
 
 from pydantic import BaseModel as _BaseModel, Field as _Field

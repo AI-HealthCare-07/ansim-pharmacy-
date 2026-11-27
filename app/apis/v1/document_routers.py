@@ -45,7 +45,7 @@ async def structure_document(document_id: _uuid.UUID):
         return JSONResponse(status_code=404, content={"error_code": "NOT_FOUND", "message": "문서를 찾을 수 없어요."})
     raw = row["ocr_raw"]
     raw = _json.loads(raw) if isinstance(raw, str) else raw
-    if not raw or row["status"] not in ("EXTRACTED", "STRUCTURED"):
+    if not raw or row["status"] not in ("EXTRACTED", "STRUCTURED", "MATCHED"):
         return JSONResponse(status_code=409, content={
             "error_code": "NOT_READY", "message": "글자 읽기가 끝난 문서만 정리할 수 있어요."})
     try:

@@ -867,6 +867,7 @@ $$;
 --     SELECT count(*) FILTER (WHERE EXISTS (SELECT 1 FROM v_item_ingredients i
 --              WHERE r.ingr_code_a IN (i.main_ingredient_code, i.ingredient_group_code))) AS linked,
 --            count(*) AS total FROM dur_rules r;
+DROP FUNCTION IF EXISTS fn_dur_alerts_for_document(UUID);
 CREATE OR REPLACE FUNCTION fn_dur_alerts_for_document(p_document_id UUID)
 RETURNS TABLE (dur_rule_id BIGINT, dur_type TEXT, item_id_a BIGINT, item_id_b BIGINT,
                trigger_reason TEXT, matched_code_a TEXT, matched_code_b TEXT, user_age SMALLINT)

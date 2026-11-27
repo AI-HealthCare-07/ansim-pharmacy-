@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>안심약국 - 디자인 시안 비교 (Mint)</title>
+    <style>
+        /* 색은 DESIGN.md 토큰(2026-11-27, 밝은 민트 164°)에 맞춤. 이전 아쿠아 민트 시안 색: #55C1B8, 코랄 #FF8A65 */
+        :root {
+            --main-mint: #2FB592;      /* --brand: 주 버튼·큰 면, 위 글자는 진한 색 */
+            --brand-ink: #1A7F65;      /* 링크·강조 글자 */
+            --light-mint: #EBF9F6;     /* --brand-soft */
+            --text-dark: #1F2A27;      /* --text */
+            --text-sub: #5B6763;       /* --text-sub */
+            --bg-cream: #FFFFFF;       /* --bg (흰 바탕) */
+            --coral: #93370D;          /* warning 글자 (선명한 주황은 쓰지 않음) */
+            --warning-soft: #FEF0C7;   /* warning 배경 */
+            --border-color: #DCE5E2;   /* --line */
+        }
+        body {
+            font-family: 'Pretendard', -apple-system, sans-serif;
+            background-color: var(--bg-cream);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        /* 탭 메뉴 */
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: #fff;
+            padding: 10px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+        .tab-btn {
+            padding: 12px 24px;
+            border: 2px solid transparent;
+            background: #F8F9FA;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 15px;
+            color: var(--text-sub);
+            transition: all 0.2s;
+        }
+        .tab-btn.active {
+            background: var(--main-mint);
+            color: var(--text-dark);
+            border-color: var(--main-mint);
+            box-shadow: 0 2px 8px rgba(47, 181, 146, 0.25);
+        }
+
+        /* 시안 컨테이너 */
+        .mockup-container {
+            display: none;
+            width: 100%;
+            justify-content: center;
+        }
+        .mockup-container.active {
+            display: flex;
+        }
+
+        /* --- 공통 버튼 및 요소 --- */
+        .btn-primary {
+            background: var(--main-mint); color: var(--text-dark); border: none; padding: 16px;
+            width: 100%; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer;
+        }
+        .img-placeholder {
+            background-image: url('https://via.placeholder.com/400x200/E2E8F0/888?text=Prescription');
+            background-size: cover; background-position: center; border-radius: 8px;
+        }
+
+        /* --- 시안 1 (카드형) --- */
+        .s1-wrap { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.05); display: flex; flex-direction: column; border: 1px solid var(--border-color); }
+        .s1-header { background: var(--text-dark); color: #fff; padding: 16px; text-align: center; font-weight: bold; }
+        .s1-image-sec { padding: 16px; background: #F8F9FA; text-align: center; position: relative; border-bottom: 1px solid var(--border-color); }
+        .s1-img { width: 100%; height: 180px; }
+        .s1-content { padding: 20px; flex: 1; }
+        .s1-card { border: 2px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+        .s1-card.warn { border-left: 6px solid var(--coral); background: var(--warning-soft); border-color: var(--warning-soft); }
+        .s1-card.success { border-left: 6px solid var(--main-mint); }
+        .s1-tag { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 8px; }
+        .s1-tag-warn { background: var(--warning-soft); color: var(--coral); }
+        .s1-tag-succ { background: var(--light-mint); color: var(--brand-ink); }
+        .s1-radio { display: flex; align-items: center; padding: 10px 0; font-size: 14px; cursor: pointer; font-weight: bold; color: var(--text-dark); }
+        .s1-radio input { margin-right: 8px; accent-color: var(--main-mint); width: 18px; height: 18px; }
+        .s1-footer { padding: 16px; border-top: 1px solid var(--border-color); }
+
+        /* --- 시안 2 (좌우 분할형) --- */
+        .s2-wrap { width: 100%; max-width: 800px; background: #fff; border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.05); overflow: hidden; display: flex; min-height: 600px; border: 1px solid var(--border-color); }
+        .s2-left { flex: 1; background: var(--text-dark); padding: 20px; display: flex; flex-direction: column; }
+        .s2-right { flex: 1; padding: 30px; display: flex; flex-direction: column; }
+        .s2-img { width: 100%; height: 100%; border: 2px solid rgba(255,255,255,0.1); }
+        .s2-title { font-size: 20px; font-weight: bold; color: var(--text-dark); margin-bottom: 20px; }
+        .s2-warn-box { background: var(--warning-soft); border: 2px solid var(--warning-soft); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .s2-warn-title { color: var(--coral); font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+        .s2-radio-label { display: flex; align-items: center; padding: 12px; border: 2px solid var(--border-color); border-radius: 8px; margin-bottom: 8px; cursor: pointer; font-weight: bold; color: var(--text-dark); }
+        .s2-radio-label input { margin-right: 12px; accent-color: var(--main-mint); width: 18px; height: 18px; }
+
+        /* --- 시안 3 (미니멀 앱형) --- */
+        .s3-wrap { width: 100%; max-width: 380px; background: #fff; border-radius: 24px; box-shadow: 0 8px 24px rgba(47, 181, 146, 0.12); overflow: hidden; display: flex; flex-direction: column; height: 700px; border: 1px solid var(--border-color); }
+        .s3-top { padding: 20px; display: flex; align-items: center; justify-content: space-between; }
+        .s3-back { font-size: 20px; color: var(--text-dark); text-decoration: none; font-weight: bold; }
+        .s3-step { font-size: 14px; color: var(--brand-ink); font-weight: bold; background: var(--light-mint); padding: 4px 10px; border-radius: 20px; }
+        .s3-progress { height: 6px; background: var(--light-mint); margin: 0 20px; border-radius: 3px; overflow: hidden; }
+        .s3-progress-fill { height: 100%; width: 50%; background: var(--main-mint); }
+        .s3-content { padding: 24px; flex: 1; overflow-y: auto; }
+        .s3-card { background: #fff; border: 2px solid var(--border-color); border-radius: 16px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+        .s3-thumb { width: 100%; height: 120px; margin-bottom: 16px; position: relative; }
+        .s3-badge { position: absolute; top: 8px; right: 8px; background: var(--warning-soft); color: var(--coral); font-size: 11px; padding: 4px 8px; border-radius: 6px; font-weight: bold; }
+        .s3-ocr-name { font-size: 18px; font-weight: bold; color: var(--text-sub); text-decoration: line-through; margin-bottom: 16px; }
+        .s3-radio { display: block; border: 2px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; }
+        .s3-radio.selected { border-color: var(--main-mint); background-color: var(--light-mint); }
+        .s3-radio input { display: none; }
+        .s3-med-name { font-size: 16px; font-weight: bold; color: var(--text-dark); margin-bottom: 4px; }
+        .s3-footer { padding: 20px; background-color: #fff; border-top: 1px solid var(--border-color); }
+    </style>
+</head>
+<body>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="showTab(1)">시안 1 (카드형)</button>
+        <button class="tab-btn" onclick="showTab(2)">시안 2 (좌우분할)</button>
+        <button class="tab-btn" onclick="showTab(3)">시안 3 (앱형 - 추천)</button>
+    </div>
+
+    <!-- 시안 1 -->
+    <div id="tab1" class="mockup-container active">
+        <div class="s1-wrap">
+            <div class="s1-header">처방전 확인</div>
+            <div class="s1-image-sec">
+                <div class="s1-img img-placeholder"></div>
+            </div>
+            <div class="s1-content">
+                <div class="s1-card warn">
+                    <span class="s1-tag s1-tag-warn">확인이 필요합니다</span>
+                    <div style="font-size:16px; font-weight:bold; color:var(--text-dark); margin-bottom:4px;">AI가 읽은 약: <span style="text-decoration: line-through; color:var(--text-sub);">자로탄정</span></div>
+                    <div style="font-size:13px; color:var(--text-sub); margin-bottom:12px;">맞는 약을 골라주세요.</div>
+                    <label class="s1-radio"><input type="radio" name="s1med" checked> 자르탄정 50mg (로사르탄칼륨)</label>
+                    <label class="s1-radio"><input type="radio" name="s1med"> 자로탄정 100mg (로사르탄칼륨)</label>
+                </div>
+            </div>
+            <div class="s1-footer"><button class="btn-primary">다음 단계로</button></div>
+        </div>
+    </div>
+
+    <!-- 시안 2 -->
+    <div id="tab2" class="mockup-container">
+        <div class="s2-wrap">
+            <div class="s2-left">
+                <div style="color:#fff; font-size:14px; margin-bottom:16px; font-weight:bold;">원본 처방전</div>
+                <div class="s2-img img-placeholder" style="background-color:#333;"></div>
+            </div>
+            <div class="s2-right">
+                <div class="s2-title">약 정보 확인</div>
+                <div style="margin-bottom:24px;">
+                    <div class="s2-warn-box">
+                        <div class="s2-warn-title">⚠️ AI가 읽은 이름: 자로탄정</div>
+                    </div>
+                    <label class="s2-radio-label"><input type="radio" name="s2med" checked> 자르탄정 50mg (로사르탄칼륨)</label>
+                    <label class="s2-radio-label"><input type="radio" name="s2med"> 자로탄정 100mg (로사르탄칼륨)</label>
+                </div>
+                <div style="margin-top:auto; display:flex;">
+                    <button class="btn-primary">확인 완료</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 시안 3 (대표님 선택) -->
+    <div id="tab3" class="mockup-container">
+        <div class="s3-wrap">
+            <div class="s3-top">
+                <a href="#" class="s3-back">←</a>
+                <span class="s3-step">1 / 2 단계</span>
+            </div>
+            <div class="s3-progress"><div class="s3-progress-fill"></div></div>
+            <div class="s3-content">
+                <div class="s3-card">
+                    <div class="s3-thumb img-placeholder"><span class="s3-badge">확인 필요</span></div>
+                    <div style="font-size:13px; color:var(--text-sub); margin-bottom:4px;">AI가 읽은 텍스트</div>
+                    <div class="s3-ocr-name">자로탄정 50mg</div>
+                    <div style="font-size:15px; font-weight:bold; color:var(--text-dark); margin-bottom:16px;">혹시 이 약인가요?</div>
+                    <label class="s3-radio selected">
+                        <input type="radio" name="s3med" checked>
+                        <div class="s3-med-name">자르탄정 50mg</div>
+                        <div style="font-size:13px; color:var(--text-sub);">성분: 로사르탄칼륨</div>
+                    </label>
+                    <label class="s3-radio">
+                        <input type="radio" name="s3med">
+                        <div class="s3-med-name">자로탄정 100mg</div>
+                        <div style="font-size:13px; color:var(--text-sub);">성분: 로사르탄칼륨</div>
+                    </label>
+                </div>
+            </div>
+            <div class="s3-footer">
+                <button class="btn-primary">이 약이 맞습니다</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(num) {
+            // 버튼 활성화 변경
+            document.querySelectorAll('.tab-btn').forEach((btn, idx) => {
+                btn.classList.toggle('active', idx === num - 1);
+            });
+            // 화면 전환
+            document.querySelectorAll('.mockup-container').forEach((container, idx) => {
+                container.classList.toggle('active', idx === num - 1);
+            });
+        }
+    </script>
+</body>
+</html>

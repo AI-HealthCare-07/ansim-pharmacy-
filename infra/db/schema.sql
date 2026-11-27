@@ -1121,15 +1121,11 @@ END $$;
 -- 20-2) 처방 항목: 자동 확인 표시(W-01), AI 안내 받지 않기(D-14)
 ALTER TABLE document_items ADD COLUMN IF NOT EXISTS confirmed_by TEXT;
 ALTER TABLE document_items ADD COLUMN IF NOT EXISTS ai_excluded  BOOLEAN NOT NULL DEFAULT false;
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_items_confirmed_by') THEN
-    ALTER TABLE document_items ADD CONSTRAINT ck_items_confirmed_by
-      CHECK (confirmed_by IS NULL OR confirmed_by IN ('AUTO','USER'));
-  END IF;
-END $$;
+ALTER TABLE document_items DROP CONSTRAINT IF EXISTS ck_items_confirmed_by;
+ALTER TABLE document_items ADD CONSTRAINT ck_items_confirmed_by
+  CHECK (confirmed_by IS NULL OR confirmed_by IN ('AUTO','USER','UNKNOWN'));
 COMMENT ON COLUMN document_items.needs_review IS '확인이 필요한 약: 점수 0.7 미만 또는 미매칭 (화면 주황 카드)';
-COMMENT ON COLUMN document_items.confirmed_by IS 'AUTO = 보험코드 일치·점수 0.7 이상이라 서버가 미리 확인 표시, USER = 사용자가 확인 (W-01)';
+COMMENT ON COLUMN document_items.confirmed_by IS 'AUTO = 보험코드 일치·점수 0.7 이상이라 서버가 미리 확인 표시, USER = 사용자가 확인 (W-01), UNKNOWN = 사용자가 잘 모르겠어요를 선택(matched_item_seq 없음, 11/27 질문 1)';
 COMMENT ON COLUMN document_items.ai_excluded  IS 'true = AI 안내를 받지 않기로 한 약. LLM 입력에서만 빠지고 금기·주의 확인·허가 정보·시간표에는 포함 (D-14)';
 COMMENT ON COLUMN document_items.include_in_analysis IS 'false = 진료기록 PDF의 과거 약 중 고르지 않은 약(DOC-007). 금기·주의 확인에서도 빠짐';
 COMMENT ON COLUMN guides.cache_key IS 'sha256(분석 대상 약(ai_excluded 제외) + 그 문서 진단명 + 건강정보 + 자료 기준일) (MED-008, D-04)';
